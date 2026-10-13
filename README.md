@@ -36,17 +36,6 @@ with `ilasm` — the assembler ships together with the extension.
 * Building from source additionally needs **Node.js** and **.NET 10 SDK** — see
   [Build and run](#-build-and-run).
 
-## 🏁 Quick start
-
-**Installation.** The extension is not in the Marketplace (`publisher: local`), so it is installed from a
-package:
-
-```bash
-code --install-extension dist/ilasm-dotnet-1.0.0.vsix --force
-```
-
-How to build that package from source is described in [Packaging](#-packaging).
-
 **First steps.**
 
 1. Open a project with a `.csproj` (or `.fsproj` / `.vbproj`) and put the cursor into a method.

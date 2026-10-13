@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- Deliberately not the newest: this is the fixture of an older runtime. A process running
+         .NET 8 is what the attach route is checked against, and an image published for .NET 8 carries
+         the older encoding of the map from an instruction to its IL instruction, which the newer
+         fixture cannot produce: the encoding follows the target framework of the assembly. -->
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>LiveTarget</AssemblyName>
+    <RootNamespace>LiveTarget</RootNamespace>
+    <DebugType>portable</DebugType>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+</Project>

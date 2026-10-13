@@ -1,0 +1,103 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "IL",
+  "scopeName": "source.il",
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#strings"
+    },
+    {
+      "include": "#labels"
+    },
+    {
+      "include": "#directives"
+    },
+    {
+      "include": "#opcodes"
+    },
+    {
+      "include": "#numbers"
+    }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.il",
+          "match": "//.*$"
+        },
+        {
+          "name": "comment.block.il",
+          "begin": "/\\*",
+          "end": "\\*/"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.il",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.il",
+              "match": "\\\\."
+            }
+          ]
+        },
+        {
+          "name": "string.quoted.single.il",
+          "match": "'[^']*'"
+        }
+      ]
+    },
+    "labels": {
+      "patterns": [
+        {
+          "name": "entity.name.label.il",
+          "match": "^\\s*(IL_[0-9A-Fa-f]{4})\\s*:"
+        },
+        {
+          "name": "keyword.control.reference.il",
+          "match": "\\b(IL_[0-9A-Fa-f]{4})\\b"
+        }
+      ]
+    },
+    "directives": {
+      "patterns": [
+        {
+          "name": "keyword.control.directive.il",
+          "match": "^\\s*\\.(class|method|field|property|event|assembly|module|namespace|locals|maxstack|custom|interfaceimpl|methodimpl|override|param|data|typedef|typeref|get|set|add|remove|other|entrypoint|zeroinit|export|file|hash|line|pack|publickey|publickeytoken|vtentry|vtfixup|ver|subsystem|imagebase|stackreserve|language|locale|mresource|try|catch|finally|filter|handler|size)\\b"
+        },
+        {
+          "name": "storage.modifier.il",
+          "match": "\\b(public|private|protected|internal|static|instance|hidebysig|virtual|abstract|sealed|beforefieldinit|auto|ansi|unicode|cil|managed|unmanaged|specialname|rtspecialname|literal|initonly|notserialized|nested|value|enum|interface|explicit|implements|extends|final|news|famandassem|famorassem|assembly|private_scope|compilercontrolled|runtime|strict|native|forwarder|fieldrva|withhandle|assert|synchronized|noinlining|aggressiveinlining|instance_scope|pinvokeimpl|modreq|modopt|default|serializable|sequential|abstract_value|char_set|import|preserveSig|bestfit|onseg|init)\\b"
+        }
+      ]
+    },
+    "opcodes": {
+      "patterns": [
+        {
+          "name": "keyword.other.opcode.il",
+          "match": "^\\s{2,}(?!\\.)([a-z][a-z0-9]*(?:\\.[a-z0-9]+)*)\\b"
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.hex.il",
+          "match": "\\b0[xX][0-9A-Fa-f]+\\b"
+        },
+        {
+          "name": "constant.numeric.il",
+          "match": "\\b-?\\d+(?:\\.\\d+)?\\b"
+        }
+      ]
+    }
+  }
+}

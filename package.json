@@ -1,0 +1,364 @@
+{
+  "name": "ilasm-dotnet",
+  "displayName": "ILASM Dotnet",
+  "description": "Read IL, decompiled C# and native ASM of .NET assemblies inside VS Code, linked to your original source lines.",
+  "version": "1.0.0",
+  "publisher": "local",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dimanrus/ilasm-dotnet-vscode.git"
+  },
+  "homepage": "https://github.com/dimanrus/ilasm-dotnet-vscode#readme",
+  "bugs": {
+    "url": "https://github.com/dimanrus/ilasm-dotnet-vscode/issues"
+  },
+  "icon": "icon.png",
+  "galleryBanner": {
+    "color": "#1E3A66",
+    "theme": "dark"
+  },
+  "keywords": [
+    "il",
+    "cil",
+    "msil",
+    "assembly",
+    "decompiler",
+    "disassembler",
+    "dotnet",
+    "ilasm",
+    "ildasm",
+    "ilspy"
+  ],
+  "categories": [
+    "Programming Languages",
+    "Visualization"
+  ],
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "main": "./out/extension.js",
+  "activationEvents": [
+    "onCommand:ilasmDotnet.copyCsharp",
+    "onCommand:ilasmDotnet.openAssembly",
+    "onCommand:ilasmDotnet.openForFile",
+    "onCommand:ilasmDotnet.showDiagnostics",
+    "onLanguage:csharp", "onLanguage:fsharp", "onLanguage:vb",
+    "onView:ilasmDotnet.assemblies"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "ilasmDotnet.openForFile",
+        "title": "ILASM Dotnet: Open IL and C# in Separate Tabs (This File)"
+      },
+      {
+        "command": "ilasmDotnet.openForCurrentLine",
+        "title": "ILASM Dotnet: Open IL and C# in Separate Tabs (Current Line)"
+      },
+      {
+        "command": "ilasmDotnet.openAssembly",
+        "title": "ILASM Dotnet: Open Assembly..."
+      },
+      {
+        "command": "ilasmDotnet.openInViewer",
+        "title": "ILASM Dotnet: Open in Viewer"
+      },
+      {
+        "command": "ilasmDotnet.goToSource",
+        "title": "ILASM Dotnet: Go to Source Line"
+      },
+      {
+        "command": "ilasmDotnet.copyIl",
+        "title": "ILASM Dotnet: Copy IL to Clipboard"
+      },
+      {
+        "command": "ilasmDotnet.copyCsharp",
+        "title": "ILASM Dotnet: Copy C# to Clipboard"
+      },
+      {
+        "command": "ilasmDotnet.refresh",
+        "title": "ILASM Dotnet: Refresh Assemblies",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "ilasmDotnet.showAsm",
+        "title": "ILASM Dotnet: Open Native ASM in a Separate Tab",
+        "icon": "$(circuit-board)"
+      },
+      {
+        "command": "ilasmDotnet.showPanel",
+        "title": "ILASM Dotnet: Open Viewer for This File",
+        "icon": "$(list-selection)"
+      },
+      {
+        "command": "ilasmDotnet.showPanelAsm",
+        "title": "ILASM Dotnet: Open Viewer with ASM for This File",
+        "icon": "$(circuit-board)"
+      },
+      {
+        "command": "ilasmDotnet.selectKind",
+        "title": "ILASM Dotnet: Select View"
+      },
+      {
+        "command": "ilasmDotnet.selectScope",
+        "title": "ILASM Dotnet: Select Scope"
+      },
+      {
+        "command": "ilasmDotnet.switchOption",
+        "title": "ILASM Dotnet: Switch View or Scope"
+      },
+      {
+        "command": "ilasmDotnet.attachProcess",
+        "title": "ILASM Dotnet: Attach to a Running Process...",
+        "icon": "$(debug-attach)"
+      },
+      {
+        "command": "ilasmDotnet.detachProcess",
+        "title": "ILASM Dotnet: Detach from the Process",
+        "icon": "$(debug-disconnect)"
+      },
+      {
+        "command": "ilasmDotnet.roundTripIl",
+        "title": "ILASM Dotnet: Assemble the IL Back with ilasm"
+      },
+      {
+        "command": "ilasmDotnet.showDiagnostics",
+        "title": "ILASM Dotnet: Show Diagnostics"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "ilasmDotnet",
+          "title": "ILASM Dotnet",
+          "icon": "resources/ilasm-dotnet.svg"
+        }
+      ]
+    },
+    "views": {
+      "ilasmDotnet": [
+        {
+          "id": "ilasmDotnet.assemblies",
+          "name": "Assemblies and native images"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "ilasmDotnet.assemblies",
+        "contents": "No assemblies or native images were found in this workspace.\n[Open Assembly...](command:ilasmDotnet.openAssembly)\nBuild your project first so the viewer can find its output; a NativeAOT image can be opened directly."
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "ilasmDotnet.openAssembly",
+          "when": "view == ilasmDotnet.assemblies",
+          "group": "navigation@1"
+        },
+        {
+          "command": "ilasmDotnet.refresh",
+          "when": "view == ilasmDotnet.assemblies",
+          "group": "navigation@2"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "ilasmDotnet.showPanel",
+          "when": "editorLangId == csharp || editorLangId == fsharp || editorLangId == vb",
+          "group": "navigation@7"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "ilasmDotnet.showAsm",
+          "when": "editorLangId == csharp || editorLangId == fsharp || editorLangId == vb || resourceScheme == ilasm-dotnet"
+        },
+        {
+          "command": "ilasmDotnet.showPanel",
+          "when": "editorLangId == csharp || editorLangId == fsharp || editorLangId == vb"
+        },
+        {
+          "command": "ilasmDotnet.showPanelAsm",
+          "when": "editorLangId == csharp || editorLangId == fsharp || editorLangId == vb"
+        },
+        {
+          "command": "ilasmDotnet.selectKind",
+          "when": "false"
+        },
+        {
+          "command": "ilasmDotnet.selectScope",
+          "when": "false"
+        },
+        {
+          "command": "ilasmDotnet.switchOption",
+          "when": "false"
+        },
+        {
+          "command": "ilasmDotnet.attachProcess"
+        },
+        {
+          "command": "ilasmDotnet.detachProcess"
+        },
+        {
+          "command": "ilasmDotnet.openInViewer",
+          "when": "false"
+        },
+        {
+          "command": "ilasmDotnet.copyCsharp",
+          "when": "resourceScheme == ilasm-dotnet"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "ilasmDotnet.showPanelAsm",
+          "when": "view == ilasmDotnet.assemblies && viewItem == ilasmDotnet.member",
+          "group": "inline"
+        },
+        {
+          "command": "ilasmDotnet.openInViewer",
+          "when": "view == ilasmDotnet.assemblies && viewItem == ilasmDotnet.member",
+          "group": "inline@1"
+        }
+      ]
+    },
+    "languages": [
+      {
+        "id": "il",
+        "aliases": [
+          "IL",
+          "IL Assembly"
+        ],
+        "extensions": [
+          ".il"
+        ],
+        "configuration": "./language-configuration.json"
+      },
+      {
+        "id": "il-asm",
+        "aliases": [
+          "IL ASM",
+          "Native Assembly"
+        ]
+      }
+    ],
+    "grammars": [
+      {
+        "language": "il",
+        "scopeName": "source.il",
+        "path": "./syntaxes/il.tmLanguage.json"
+      },
+      {
+        "language": "il-asm",
+        "scopeName": "source.il-asm",
+        "path": "./syntaxes/il-asm.tmLanguage.json"
+      }
+    ],
+    "configuration": {
+      "title": "ILASM Dotnet",
+      "properties": {
+        "ilasmDotnet.dotnetPath": {
+          "type": "string",
+          "default": "dotnet",
+          "description": "Path to the dotnet host used to run the ILASM Dotnet engine."
+        },
+        "ilasmDotnet.enginePath": {
+          "type": "string",
+          "default": "",
+          "description": "Absolute path to the ILASM Dotnet engine. Either a published executable or the IlasmDotnet.Engine.dll to run with dotnet. Empty means use the bundled/built copy."
+        },
+        "ilasmDotnet.includeCompilerGenerated": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show compiler generated types and members (state machines, lambdas) in the decompiled C# view."
+        },
+        "ilasmDotnet.syncOriginalSource": {
+          "type": "boolean",
+          "default": true,
+          "description": "Highlight the original source lines that correspond to the IL instruction under the caret."
+        },
+        "ilasmDotnet.syncScroll": {
+          "type": "boolean",
+          "default": true,
+          "description": "Scroll a linked view or the source file to the highlighted code while the caret moves. The scroll happens only when the match is outside the visible part."
+        },
+        "ilasmDotnet.maxAssembliesPerProject": {
+          "type": "number",
+          "default": 1,
+          "description": "Maximum number of build outputs to discover per project."
+        },
+        "ilasmDotnet.asmOptimized": {
+          "type": "boolean",
+          "default": true,
+          "description": "Ask the JIT for optimized (FullOpts) native code instead of tier 0 code. Ignored for assemblies built with [Debuggable], which cannot be optimized."
+        },
+        "ilasmDotnet.ilasmPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to ilasm. Leave empty to use the assembler shipped with the extension, the NuGet cache or PATH."
+        },
+        "ilasmDotnet.nativeIncludeRuntime": {
+          "type": "boolean",
+          "default": false,
+          "description": "List the methods of the runtime with the application's own when a NativeAOT image is read. An AOT image holds the code of the framework it was built with, which is thousands of methods the reader did not write."
+        },
+        "ilasmDotnet.asmSource": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "image",
+            "jit"
+          ],
+          "default": "auto",
+          "description": "Where the native code comes from: an attached process (always wins), the image itself (ReadyToRun), or the JIT of this machine."
+        },
+        "ilasmDotnet.assemblies": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Assemblies and native images to list in the tree in addition to the build outputs found in the workspace."
+        }
+      }
+    },
+    "keybindings": [
+      {
+        "command": "ilasmDotnet.showPanel",
+        "key": "ctrl+alt+i",
+        "when": "editorLangId == csharp || editorLangId == fsharp || editorLangId == vb"
+      },
+      {
+        "command": "ilasmDotnet.switchOption",
+        "key": "ctrl+alt+shift+i",
+        "when": "resourceScheme == ilasm-dotnet"
+      },
+      {
+        "command": "ilasmDotnet.goToSource",
+        "key": "ctrl+alt+o",
+        "when": "resourceScheme == ilasm-dotnet"
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p ./ --noEmit && node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "typecheck": "tsc -p ./ --noEmit",
+    "build:engine": "dotnet publish engine/IlasmDotnet.Engine/IlasmDotnet.Engine.csproj -c Release -o out/engine -p:UseAppHost=false -p:DebugType=none -p:GenerateDocumentationFile=false && node scripts/copy-ilasm.mjs",
+    "pretest": "npm run compile && tsc src/viewer/mapping.ts src/viewer/viewSession.ts src/engine/protocol.ts --outDir out/test --module commonjs --target es2022 --skipLibCheck",
+    "pretest:inhost": "npm run compile",
+    "test": "node --test scripts/manifest.test.mjs scripts/mapping.test.mjs scripts/viewsession.test.mjs && node scripts/extension.test.mjs && node scripts/smoke.mjs",
+    "check": "npm run compile && npm run build:engine && npm test",
+    "test:inhost": "node scripts/test-inhost.mjs",
+    "package": "npm run compile && npm run build:engine && node -e \"require('node:fs').mkdirSync('dist', { recursive: true })\" && vsce package --out dist/ilasm-dotnet-1.0.0.vsix"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/vscode": "^1.90.0",
+    "@vscode/vsce": "^4.0.0",
+    "esbuild": "^0.23.0",
+    "typescript": "^5.5.4"
+  },
+  "private": true
+}

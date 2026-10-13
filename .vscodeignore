@@ -1,0 +1,34 @@
+# Build inputs and sources are not part of the package: the extension ships the esbuild bundle
+# in out/extension.js and the published engine in out/engine/.
+.vscode/**
+.github/**
+src/**
+engine/**
+scripts/**
+test/**
+out/test/**
+**/*.map
+**/*.ts
+**/*.cs
+**/*.csproj
+**/*.pdb
+node_modules/**
+.vscodeignore
+.gitignore
+esbuild.mjs
+tsconfig.json
+package-lock.json
+**/.DS_Store
+
+# Local artifacts of running the viewer itself: the round-trip output of the fixtures and the built
+# VSIX. They are neither code nor documentation of the extension.
+.il-viewer/**
+.ilasm-dotnet/**
+dist/**
+
+# Capstone ships native libraries for nine platforms; the viewer only ever needs the five the
+# extension targets, so the rest are left out of the package.
+out/engine/runtimes/linux-x86/**
+out/engine/runtimes/linux-arm/**
+out/engine/runtimes/win-x86/**
+out/engine/runtimes/win-arm64/**

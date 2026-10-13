@@ -1,0 +1,91 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "IL ASM",
+  "scopeName": "source.il-asm",
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#labels"
+    },
+    {
+      "include": "#references"
+    },
+    {
+      "include": "#mnemonics"
+    },
+    {
+      "include": "#registers"
+    },
+    {
+      "include": "#numbers"
+    }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.semicolon.il-asm",
+          "match": ";.*$"
+        }
+      ]
+    },
+    "labels": {
+      "patterns": [
+        {
+          "name": "entity.name.label.il-asm",
+          "match": "^\\s*(G_M\\d+_IG\\d+|[A-Z_]+\\d*):"
+        },
+        {
+          "name": "keyword.control.label.il-asm",
+          "match": "\\b(G_M\\d+_IG\\d+)\\b"
+        },
+        {
+          "name": "keyword.operator.help.il-asm",
+          "match": "\\b(CORINFO_HELP_[A-Z0-9_]+)\\b"
+        }
+      ]
+    },
+    "references": {
+      "patterns": [
+        {
+          "name": "entity.name.type.il-asm",
+          "match": "\\[([A-Za-z0-9_.`+]+):[A-Za-z0-9_.<>,\\[\\]]+"
+        },
+        {
+          "name": "variable.other.member.il-asm",
+          "match": "(?<=\\[[^\\]]{0,120}:)[A-Za-z0-9_]+(?=[\\(\\]\\)])"
+        }
+      ]
+    },
+    "mnemonics": {
+      "patterns": [
+        {
+          "name": "keyword.other.mnemonic.il-asm",
+          "match": "^\\s{2,}([a-z][a-z0-9]*)\\b"
+        }
+      ]
+    },
+    "registers": {
+      "patterns": [
+        {
+          "name": "variable.other.register.il-asm",
+          "match": "\\b(r(?:ax|bx|cx|dx|si|di|bp|sp|8|9|1[0-5])d?|[re]?(?:ax|bx|cx|dx|si|di|bp|sp)|rip|eip|[xyz]mm\\d+)\\b"
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.hex.il-asm",
+          "match": "\\b0x[0-9A-Fa-f]+\\b"
+        },
+        {
+          "name": "constant.numeric.il-asm",
+          "match": "\\b\\d+\\b"
+        }
+      ]
+    }
+  }
+}

@@ -81,21 +81,15 @@ and `ILASM Dotnet: Show Diagnostics` will gather the overall picture.
 All three are the same viewer tab — only the view and the scope change. The source file stays on the left,
 the listing on the right, and the cursor in the source highlights what it produced.
 
-**`IL code`**: the listing of a member with sequence point annotations. The cursor in `NativeCache.cs`
-selects the member, and the tab answers with its IL instructions — locals, branches, calls, and a
-`// sequence point:` comment before each group:
+**`IL code`**
 
 ![IL code view: the listing of a member with sequence points](images/il-code.png)
 
-**`Native ASM`**: the same selection switched to the native code — the JIT listing with its blocks
-(`G_M000_IG01`), offsets and `CORINFO_HELP_*` helpers, so that the compiled body can be read instruction
-by instruction:
+**`Native ASM`**
 
 ![Native ASM view: the x64 JIT listing of a member](images/native-asm.png)
 
-**`C# (low level)`**: what the compiler made of the code — the state machines of the `async` members of
-`Playground.Importer` as real types with generated fields (`<>t__builder`, `<>1__state`), generated bodies
-and the `AsyncStateMachine` attributes, next to the original source:
+**`C# (low level)`**
 
 ![Low-level C# view: compiler-generated state machines and generated members](images/csharp-low-level.png)
 

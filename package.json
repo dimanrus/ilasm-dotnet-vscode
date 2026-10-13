@@ -2,7 +2,7 @@
   "name": "ilasm-dotnet",
   "displayName": "ILASM Dotnet",
   "description": "Read IL, decompiled C# and native ASM of .NET assemblies inside VS Code, linked to your original source lines.",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "publisher": "dimanrus",
   "license": "MIT",
   "repository": {
@@ -366,7 +366,7 @@
     "test": "node --test scripts/manifest.test.mjs scripts/mapping.test.mjs scripts/viewsession.test.mjs && node scripts/extension.test.mjs && node scripts/smoke.mjs",
     "check": "npm run compile && npm run build:engine && npm test",
     "test:inhost": "node scripts/test-inhost.mjs",
-    "package": "npm run compile && npm run build:engine && node -e \"require('node:fs').mkdirSync('dist', { recursive: true })\" && vsce package --out dist/ilasm-dotnet-1.0.0.vsix"
+    "package": "npm run compile && npm run build:engine && node -e \"require('node:fs').mkdirSync('dist', { recursive: true })\" && vsce package --out dist/ilasm-dotnet-1.0.1.vsix"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",

@@ -1,8 +1,12 @@
 # 📋 Changelog
 
-All notable changes to ILASM Dotnet are documented in this file. The format follows
-[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
-[Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [1.0.1] - 2026-10-13
+
+### 🔍 Discovery
+
+- Update keywords
+- Add changelog
+
 
 ## [1.0.0] - 2026-10-13 🎉
 
@@ -70,4 +74,5 @@ First public release.
 - The extension makes no network requests and collects no telemetry — every view is computed locally by
   the bundled .NET engine.
 
+[1.0.1]: https://github.com/dimanrus/ilasm-dotnet-vscode/releases
 [1.0.0]: https://github.com/dimanrus/ilasm-dotnet-vscode/releases

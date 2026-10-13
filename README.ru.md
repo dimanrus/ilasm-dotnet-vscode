@@ -4,7 +4,7 @@
 
 ![Иконка расширения ILASM Dotnet](icon.png)
 
-![Версия 1.0.0](https://img.shields.io/badge/version-1.0.0-blue?style=flat-square)
+![Версия 1.0.1](https://img.shields.io/badge/version-1.0.1-blue?style=flat-square)
 ![VS Code ^1.90.0](https://img.shields.io/badge/VS%20Code-%5E1.90.0-007ACC?style=flat-square&logo=visualstudiocode&logoColor=white)
 ![.NET net10.0](https://img.shields.io/badge/.NET-net10.0-512BD4?style=flat-square&logo=dotnet&logoColor=white)
 ![Лицензия MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)
@@ -51,7 +51,7 @@ ASM-панель умеет читать код тремя способами: �
 
 ## 📑 Содержание
 
-- [🏁 Быстрый старт](#-быстрый-старт)
+- [📸 Скриншоты](#-скриншоты)
 - [✅ Что уже работает](#-что-уже-работает)
 - [📦 Что читается](#-что-читается)
 - [🧱 Архитектура](#-архитектура)
@@ -76,6 +76,23 @@ ASM-панель умеет читать код тремя способами: �
 - [📄 Лицензия](#-лицензия)
 
 **Легенда:** ✅ — работает; ⚠️ — работает с оговорками, они описаны в таблице; ❌ — не поддерживается.
+
+## 📸 Скриншоты
+
+Все три — одна и та же вкладка просмотра, меняются только вид и область. Слева остаётся исходный файл,
+справа — листинг, и курсор в исходнике подсвечивает то, что из него получилось.
+
+**`IL code`**
+
+![Вид IL code: листинг члена с sequence points](images/il-code.png)
+
+**`Native ASM`**
+
+![Вид Native ASM: листинг метода от JIT для x64](images/native-asm.png)
+
+**`C# (low level)`**
+
+![Вид C# (low level): сгенерированные компилятором конечные автоматы и члены](images/csharp-low-level.png)
 
 ## ✅ Что уже работает
 
@@ -214,6 +231,7 @@ scripts/                    тесты и инструменты: smoke, extensi
 test/fixtures/              фикстуры: SampleLib, LiveTarget, AotTarget, FsTarget, Playground, R2RDebug
 syntaxes/                   TextMate-грамматики il и il-asm
 resources/                  иконка вида ilasm-dotnet.svg
+images/                     скриншоты, показанные в этом README
 ```
 
 Что именно проверяет каждая часть — в разделе [Тесты](#-тесты).
@@ -517,7 +535,7 @@ npm run package       # собрать dist/ilasm-dotnet-<версия>.vsix
   обязан открыть одну вкладку с кодом этого узла, исходник слева с кареткой на члене и **не**
   оставить пустую колонку, значок ASM узла обязан показать нативный код, а attach к процессу в конце
   проверяется переходом из инструкции в точную строку исходника. Скрипт умеет проверять и
-  **установленный VSIX**: `node scripts/test-inhost.mjs --vsix dist/ilasm-dotnet-1.0.0.vsix`.
+  **установленный VSIX**: `node scripts/test-inhost.mjs --vsix dist/ilasm-dotnet-1.0.1.vsix`.
 
 ## 🔬 Как получается нативный ASM
 
@@ -783,8 +801,8 @@ this build cannot disassemble (x64 and arm64 only)» — и говорит, чт
 ## 📮 Упаковка
 
 ```bash
-npm run package     # dist/ilasm-dotnet-1.0.0.vsix
-code --install-extension dist/ilasm-dotnet-1.0.0.vsix --force
+npm run package     # dist/ilasm-dotnet-1.0.1.vsix
+code --install-extension dist/ilasm-dotnet-1.0.1.vsix --force
 ```
 
 В пакет попадают бандл расширения, опубликованный движок, грамматики, иконка и два нативных

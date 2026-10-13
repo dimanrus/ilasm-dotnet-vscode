@@ -4,7 +4,7 @@
 
 ![ILASM Dotnet extension icon](icon.png)
 
-![Version 1.0.0](https://img.shields.io/badge/version-1.0.0-blue?style=flat-square)
+![Version 1.0.1](https://img.shields.io/badge/version-1.0.1-blue?style=flat-square)
 ![VS Code ^1.90.0](https://img.shields.io/badge/VS%20Code-%5E1.90.0-007ACC?style=flat-square&logo=visualstudiocode&logoColor=white)
 ![.NET net10.0](https://img.shields.io/badge/.NET-net10.0-512BD4?style=flat-square&logo=dotnet&logoColor=white)
 ![MIT License](https://img.shields.io/badge/license-MIT-green?style=flat-square)
@@ -50,7 +50,7 @@ and `ILASM Dotnet: Show Diagnostics` will gather the overall picture.
 
 ## 📑 Contents
 
-- [🏁 Quick start](#-quick-start)
+- [📸 Screenshots](#-screenshots)
 - [✅ What already works](#-what-already-works)
 - [📦 What is read](#-what-is-read)
 - [🧱 Architecture](#-architecture)
@@ -75,6 +75,29 @@ and `ILASM Dotnet: Show Diagnostics` will gather the overall picture.
 - [📄 License](#-license)
 
 **Legend:** ✅ — works; ⚠️ — works with caveats, they are described in the table; ❌ — not supported.
+
+## 📸 Screenshots
+
+All three are the same viewer tab — only the view and the scope change. The source file stays on the left,
+the listing on the right, and the cursor in the source highlights what it produced.
+
+**`IL code`**: the listing of a member with sequence point annotations. The cursor in `NativeCache.cs`
+selects the member, and the tab answers with its IL instructions — locals, branches, calls, and a
+`// sequence point:` comment before each group:
+
+![IL code view: the listing of a member with sequence points](images/il-code.png)
+
+**`Native ASM`**: the same selection switched to the native code — the JIT listing with its blocks
+(`G_M000_IG01`), offsets and `CORINFO_HELP_*` helpers, so that the compiled body can be read instruction
+by instruction:
+
+![Native ASM view: the x64 JIT listing of a member](images/native-asm.png)
+
+**`C# (low level)`**: what the compiler made of the code — the state machines of the `async` members of
+`Playground.Importer` as real types with generated fields (`<>t__builder`, `<>1__state`), generated bodies
+and the `AsyncStateMachine` attributes, next to the original source:
+
+![Low-level C# view: compiler-generated state machines and generated members](images/csharp-low-level.png)
 
 ## ✅ What already works
 
@@ -212,6 +235,7 @@ scripts/                    tests and tools: smoke, extension.test, inhost, copy
 test/fixtures/              fixtures: SampleLib, LiveTarget, AotTarget, FsTarget, Playground, R2RDebug
 syntaxes/                   TextMate grammars for il and il-asm
 resources/                  the ilasm-dotnet.svg view icon
+images/                     the screenshots shown in this README
 ```
 
 What exactly each part checks is described in [Tests](#-tests).
@@ -524,7 +548,7 @@ npm run package       # build dist/ilasm-dotnet-<version>.vsix
   closed must open a single tab with the code of that node, the source on the left with the caret on the
   member and **not** leave an empty column, the ASM icon of a node must show the native code, and attach
   to a process is checked at the end by a jump from an instruction to the exact source line. The script
-  can also check an **installed VSIX**: `node scripts/test-inhost.mjs --vsix dist/ilasm-dotnet-1.0.0.vsix`.
+  can also check an **installed VSIX**: `node scripts/test-inhost.mjs --vsix dist/ilasm-dotnet-1.0.1.vsix`.
 
 ## 🔬 How the native ASM is produced
 
@@ -792,8 +816,8 @@ What is worth knowing:
 ## 📮 Packaging
 
 ```bash
-npm run package     # dist/ilasm-dotnet-1.0.0.vsix
-code --install-extension dist/ilasm-dotnet-1.0.0.vsix --force
+npm run package     # dist/ilasm-dotnet-1.0.1.vsix
+code --install-extension dist/ilasm-dotnet-1.0.1.vsix --force
 ```
 
 The package contains the extension bundle, the published engine, the grammars, the icon and two native

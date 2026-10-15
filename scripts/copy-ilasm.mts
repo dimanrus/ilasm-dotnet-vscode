@@ -15,7 +15,7 @@ const packages = process.env.NUGET_PACKAGES ?? path.join(os.homedir(), '.nuget',
 let copied = 0;
 
 /** Compares two package versions so that 10.0.12 sorts above 9.0.0. */
-function compareVersions(left, right) {
+function compareVersions(left: string, right: string): number {
   const a = left.split('.');
   const b = right.split('.');
   for (let index = 0; index < Math.max(a.length, b.length); index++) {

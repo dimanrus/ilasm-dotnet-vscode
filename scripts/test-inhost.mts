@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// Runs scripts/inhost/index.js inside a real VS Code extension host, using an isolated profile.
+// Runs scripts/inhost/index.ts inside a real VS Code extension host, using an isolated profile.
 //
-//   node scripts/test-inhost.mjs                     # development host: loads the repo folder
-//   node scripts/test-inhost.mjs --vsix <file.vsix>  # installs the packaged extension and tests it
+//   node scripts/test-inhost.mts                     # development host: loads the repo folder
+//   node scripts/test-inhost.mts --vsix <file.vsix>  # installs the packaged extension and tests it
 //
 // VS Code detaches the CLI, so the result is read back from the window's renderer log.
 import { spawn, spawnSync } from 'node:child_process';
@@ -19,7 +19,7 @@ const userDataDirectory = path.join(profileDirectory, 'user-data');
 const extensionsDirectory = path.join(profileDirectory, 'extensions');
 const timeoutMs = Number(process.env.IL_VIEWER_HOST_TIMEOUT ?? 240_000);
 
-function parseArguments(argv) {
+function parseArguments(argv: string[]): { vsix: string | undefined } {
   const vsixIndex = argv.indexOf('--vsix');
   return { vsix: vsixIndex >= 0 ? argv[vsixIndex + 1] : undefined };
 }
@@ -47,7 +47,8 @@ function buildFixture() {
   }
 }
 
-function installVsix(vsixPath) {
+/** Installs the VSIX into the isolated profile and returns what it registered. */
+function installVsix(vsixPath: string): string[] {
   console.log(`installing ${path.basename(vsixPath)} into the isolated profile...`);
   const result = spawnSync(
     'code',
@@ -107,7 +108,7 @@ function dumpDiagnostics() {
  * directly; extracting verifies the packaged files themselves, while installVsix proves the
  * package installs.
  */
-function extractVsix(vsixPath) {
+function extractVsix(vsixPath: string): string {
   const target = path.join(profileDirectory, 'extracted');
   fs.mkdirSync(target, { recursive: true });
 
@@ -193,6 +194,10 @@ function readReport() {
   }
 
   const match = /(\d+)\/(\d+) in-host checks passed/.exec(lines[resultIndex]);
+  if (!match) {
+    return undefined;
+  }
+
   const checks = lines
     .slice(0, resultIndex)
     .filter((line) => /\[info\]\s+(ok|FAIL)\s+/.test(line))
@@ -218,7 +223,7 @@ async function main() {
   const args = [
     `--user-data-dir=${userDataDirectory}`,
     `--extensions-dir=${extensionsDirectory}`,
-    `--extensionTestsPath=${path.join(root, 'scripts', 'inhost')}`,
+    `--extensionTestsPath=${path.join(root, 'out', 'inhost')}`,
     '--disable-telemetry',
     '--disable-workspace-trust',
     '--disable-updates',

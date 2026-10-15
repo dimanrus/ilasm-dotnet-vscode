@@ -8,6 +8,175 @@ import * as path from 'node:path';
 import * as readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
 
+/**
+ * The engine speaks JSON-RPC: a request names a method and the engine answers with the result of
+ * that method. The interfaces below describe the fields this script reads of each answer — no more
+ * than the checks use, and no less — which is what keeps the calls typed while the payloads stay
+ * whatever the engine sends.
+ */
+interface AssemblyInfo {
+  name: string;
+  path: string;
+  typeCount: number;
+  isExecutable: boolean;
+  hasPdb: boolean;
+  targetFramework: string;
+  architecture: string;
+}
+
+/** A type of the tree, as `assembly/types` and `file/scope` describe it. */
+interface TypeSummary {
+  fullName: string;
+  name: string;
+  kind: string;
+  token: number;
+}
+
+/** A member of a type or of a file; `owner` and `accessor` are set for a property accessor. */
+interface MemberSummary {
+  name: string;
+  kind: string;
+  signature: string;
+  declaringType: string;
+  token: number;
+  owner?: string;
+  accessor?: string;
+}
+
+/** One entry of the map a view produces: a range of text and the IL and source it belongs to. */
+interface ViewBlock {
+  methodToken: number;
+  ilStart: number;
+  ilEnd: number;
+  textStartLine: number;
+  textEndLine: number;
+  sourceFile: string | null;
+  sourceStartLine: number;
+  sourceEndLine: number;
+}
+
+/** What the IL, C# and ASM panes return; `notes` and `hasDebugInfo` only some routes set. */
+interface ViewResult {
+  text: string;
+  title: string;
+  language: string;
+  blocks: ViewBlock[];
+  notes?: string[];
+  hasDebugInfo?: boolean;
+}
+
+/** The file and the line a token was compiled from; the file is unset without a usable PDB. */
+interface SourceLocation {
+  file: string | null;
+  line: number;
+}
+
+/** The process a live view is taken from. */
+interface LiveSession {
+  pid: number;
+  mode: string;
+  runtime: string;
+  modules: number;
+  snapshotBytes: number;
+}
+
+/** One process the engine could attach to. */
+interface ProcessEntry {
+  pid: number;
+  command?: string;
+}
+
+/** A native image and the debug information beside it. */
+interface NativeInfo {
+  machine: string;
+  methodCount: number;
+  runtimeMethodCount: number;
+  hasDebugInfo: boolean;
+  debugFile?: string;
+  note?: string;
+}
+
+/** A method of a native image, as the debug information beside the image names it. */
+interface NativeMethod {
+  fullName: string;
+  name: string;
+  symbol: string;
+  address: number;
+  size: number;
+  line: number;
+  file: string;
+  isRuntime: boolean;
+}
+
+/** What assembling a listing back into an assembly reports. */
+interface RoundTripResult {
+  success: boolean;
+  output?: string;
+  ilasmPath: string;
+  ilPath: string;
+  outputPath: string;
+  roundTripTypes: number;
+  originalTypes: number;
+  roundTripMethods: number;
+  originalMethods: number;
+  differences: string[];
+}
+
+/** The types and members a file declares. */
+interface FileScope {
+  types: TypeSummary[];
+  members: MemberSummary[];
+}
+
+/** The architectures a precompiled image is published for, and whether the publish worked. */
+type PublishedImages = Record<string, boolean>;
+
+/** The result each method of the engine answers with. */
+interface EngineResults {
+  'assembly/info': AssemblyInfo;
+  'assembly/types': TypeSummary[];
+  'assembly/members': MemberSummary[];
+  'file/scope': FileScope;
+  'view/il': ViewResult;
+  'view/csharp': ViewResult;
+  'view/fileIl': ViewResult;
+  'view/fileCsharp': ViewResult;
+  'view/fileAsm': ViewResult;
+  'view/asm': ViewResult;
+  'view/asmLive': ViewResult;
+  'map/memberBySource': MemberSummary;
+  'map/fileOf': SourceLocation;
+  'live/attach': LiveSession;
+  'live/detach': string;
+  'processes': ProcessEntry[];
+  'native/info': NativeInfo;
+  'native/methods': NativeMethod[];
+  'native/asm': ViewResult;
+  'native/methodBySource': NativeMethod | null;
+  'assemble/roundTrip': RoundTripResult;
+  'shutdown': unknown;
+}
+
+/** A request that is in flight: the promise the reader of the engine's replies settles. */
+interface PendingCall {
+  resolve(value: unknown): void;
+  reject(reason: Error): void;
+}
+
+/** A reply of the engine: the request it answers, and the result or the error it carries. */
+interface EngineReply {
+  id: number;
+  error?: { message: string };
+  result?: unknown;
+}
+
+/** A request of the engine, typed after the method it names. */
+type EngineCall = <M extends keyof EngineResults>(
+  method: M,
+  params?: Record<string, unknown>,
+) => Promise<EngineResults[M]>;
+
+
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const fixtureProject = path.join(root, 'test', 'fixtures', 'SampleLib', 'SampleLib.csproj');
 const fixtureAssembly = path.join(root, 'test', 'fixtures', 'SampleLib', 'bin', 'Debug', 'net10.0', 'SampleLib.dll');
@@ -42,10 +211,10 @@ const singleImage = path.join(singleDirectory, 'LiveTarget');
 const compressedDirectory = path.join(liveDirectory, 'bin', 'single-compressed');
 const compressedImage = path.join(compressedDirectory, 'LiveTarget');
 
-const failures = [];
-const checks = [];
+const failures: string[] = [];
+const checks: string[] = [];
 
-function check(name, condition, detail = '') {
+function check(name: string, condition: boolean, detail: string | null = '') {
   checks.push(name);
   if (condition) {
     console.log(`  ok   ${name}`);
@@ -93,7 +262,7 @@ function buildFixture() {
  */
 function publishReadyToRun() {
   console.log('publishing the live target for ReadyToRun...');
-  const published = {};
+  const published: PublishedImages = {};
 
   // The arm64 image is what makes an architecture the viewer does not run on readable: it is
   // compiled here and disassembled from the file, without a process and without an arm64 machine.
@@ -268,19 +437,19 @@ function publishFsharp() {
 }
 
 /** The first place a listing names an IL instruction, for a message that shows what went wrong. */
-function firstLabel(text) {
+function firstLabel(text: string): string {
   return text.split('\n').find((line) => line.includes('; IL_')) ?? text.split('\n')[4] ?? '';
 }
 
 /** The IL instruction behind every instruction of a listing, in the order the listing prints them. */
-function labelsOf(text) {
+function labelsOf(text: string) {
   return text
     .split('\n')
     .map((line) => /;\s*(IL_[0-9a-f]{4}|prolog|epilog|no IL)\s*$/.exec(line)?.[1])
     .filter(Boolean);
 }
 
-function findEngine() {
+function findEngine(): string {
   const candidates = [
     path.join(root, 'out', 'engine', 'IlasmDotnet.Engine.dll'),
     path.join(root, 'engine', 'IlasmDotnet.Engine', 'bin', 'Release', 'net10.0', 'IlasmDotnet.Engine.dll'),
@@ -295,9 +464,9 @@ function findEngine() {
   return found;
 }
 
-function startEngine(dllPath) {
+function startEngine(dllPath: string) {
   const child = spawn('dotnet', [dllPath], { stdio: ['pipe', 'pipe', 'pipe'] });
-  const pending = new Map();
+  const pending = new Map<number, PendingCall>();
   let nextId = 1;
 
   readline.createInterface({ input: child.stdout }).on('line', (line) => {
@@ -305,7 +474,7 @@ function startEngine(dllPath) {
       return;
     }
 
-    let message;
+    let message: EngineReply;
     try {
       message = JSON.parse(line);
     } catch {
@@ -331,7 +500,7 @@ function startEngine(dllPath) {
     }
   });
 
-  const call = (method, params) =>
+  const call: EngineCall = (method, params) =>
     new Promise((resolve, reject) => {
       const id = nextId++;
       pending.set(id, { resolve, reject });
@@ -342,16 +511,16 @@ function startEngine(dllPath) {
 }
 
 /** Starts the fixture and waits until it reports that its methods ran. */
-function startTarget(assembly) {
+function startTarget(assembly: string) {
   const target = spawn('dotnet', [assembly, '90'], { stdio: ['ignore', 'pipe', 'pipe'] });
   return target;
 }
 
-function waitForReady(target) {
+function waitForReady(target: ReturnType<typeof spawn>): Promise<boolean> {
   return new Promise((resolve) => {
     let output = '';
     const timer = setTimeout(() => resolve(false), 60000);
-    target.stdout.on('data', (chunk) => {
+    target.stdout!.on('data', (chunk: Buffer) => {
       output += String(chunk);
       if (output.includes('ready')) {
         clearTimeout(timer);
@@ -374,7 +543,7 @@ function waitForReady(target) {
  * lines of `.fs` files. The C# pane has no F# to show, so what it shows is the C# the IL of an F#
  * assembly is, which is a decompilation and is checked to be one rather than an error.
  */
-async function checkFsharp(call) {
+async function checkFsharp(call: EngineCall) {
   if (!fs.existsSync(fsAssembly)) {
     console.log('  skip the F# checks — the fixture could not be built');
     return;
@@ -392,11 +561,11 @@ async function checkFsharp(call) {
   const catalog = types.find((type) => type.fullName === 'FsTarget.Catalog');
   check('a type written in F# is listed', Boolean(catalog), types.map((type) => type.fullName).join(','));
 
-  const members = await call('assembly/members', { path: fsAssembly, token: catalog.token });
+  const members = await call('assembly/members', { path: fsAssembly, token: catalog!.token });
   check('the members a property of an F# type declares are listed', members.some((member) => member.name === 'get_Total'), members.map((member) => member.name).join(','));
 
   const total = members.find((member) => member.name === 'get_Total');
-  const il = await call('view/il', { path: fsAssembly, token: total.token });
+  const il = await call('view/il', { path: fsAssembly, token: total!.token });
   check('the IL of an F# member is shown', il.text.includes('.method'), il.text.split('\n')[0]);
   check('the IL of an F# member links to the .fs file', il.blocks.every((block) => block.sourceFile === fsSource), JSON.stringify(il.blocks[0]));
   check('the linked line of an F# member is inside the file', il.blocks.every((block) => block.sourceStartLine > 0 && block.sourceStartLine <= 30), JSON.stringify(il.blocks[0]));
@@ -411,7 +580,7 @@ async function checkFsharp(call) {
   const member = await call('map/memberBySource', { path: fsAssembly, file: fsSource, line: fsTotalLine });
   check('a line of an F# file resolves to the member it declares', member?.declaringType === 'FsTarget.Catalog' && member.name === 'get_Total', JSON.stringify(member));
 
-  const jit = await call('view/asm', { path: fsAssembly, token: total.token, optimized: false, source: 'jit' });
+  const jit = await call('view/asm', { path: fsAssembly, token: total!.token, optimized: false, source: 'jit' });
   check('the JIT route compiles a method of an F# assembly', jit.text.includes('Assembly listing for method'), jit.text.split('\n').slice(0, 4).join(' | '));
 }
 
@@ -419,7 +588,7 @@ async function checkFsharp(call) {
  * An F# project published with ReadyToRun carries the same tables as a C# one, including the map
  * from an instruction to its IL instruction: the compiler of the language is not what writes them.
  */
-async function checkFsharpImage(call, published) {
+async function checkFsharpImage(call: EngineCall, published: boolean) {
   if (!published) {
     console.log('  skip the F# image checks — the fixture could not be published');
     return;
@@ -427,7 +596,7 @@ async function checkFsharpImage(call, published) {
 
   const types = await call('assembly/types', { path: fsR2rAssembly });
   const catalog = types.find((type) => type.fullName === 'FsTarget.Catalog');
-  const members = await call('assembly/members', { path: fsR2rAssembly, token: catalog.token });
+  const members = await call('assembly/members', { path: fsR2rAssembly, token: catalog!.token });
   const describe = members.find((member) => member.name === 'get_Describe');
 
   // Every method the image carries has to be labelled. Two of the members of this fixture have code
@@ -453,14 +622,14 @@ async function checkFsharpImage(call, published) {
 
   // A property of an F# type whose body is a tail call is the smallest map there is: three
   // instructions and a handful of entries. It has to be labelled like any other.
-  const small = await call('view/asm', { path: fsR2rAssembly, token: describe.token, optimized: false, source: 'image' });
+  const small = await call('view/asm', { path: fsR2rAssembly, token: describe!.token, optimized: false, source: 'image' });
   check('the code of an F# assembly is read from its image', small.text.includes('(read from the image)'), small.text.split('\n')[0]);
   check('the image of an F# assembly names the IL instruction of an instruction', /; IL_[0-9a-f]{4}/.test(small.text), firstLabel(small.text));
 
   const logic = types.find((type) => type.fullName === 'FsTarget.CatalogLogic');
-  const logicMembers = await call('assembly/members', { path: fsR2rAssembly, token: logic.token });
+  const logicMembers = await call('assembly/members', { path: fsR2rAssembly, token: logic!.token });
   const describeLogic = logicMembers.find((member) => member.name === 'describe');
-  const image = await call('view/asm', { path: fsR2rAssembly, token: describeLogic.token, optimized: false, source: 'image' });
+  const image = await call('view/asm', { path: fsR2rAssembly, token: describeLogic!.token, optimized: false, source: 'image' });
 
   const bodyEnd = Math.max(...image.blocks.map((block) => block.ilEnd));
   const labelled = [...image.text.matchAll(/; IL_([0-9a-f]{4})/g)].map((match) => parseInt(match[1], 16));
@@ -481,7 +650,7 @@ async function checkFsharpImage(call, published) {
       // The method the runtime reports on is compared. A body the toolchain inlined — which several
       // of the one-line properties of this fixture are — has no method of its own in the process at
       // all, and that is what the image is for: it lists them anyway.
-      const live = await call('view/asmLive', { path: fsR2rAssembly, token: describeLogic.token });
+      const live = await call('view/asmLive', { path: fsR2rAssembly, token: describeLogic!.token });
       check(
         'the F# image agrees with the runtime instruction for instruction',
         labelsOf(live.text).length > 3 && labelsOf(live.text).join(' ') === labelsOf(image.text).join(' '),
@@ -504,7 +673,7 @@ async function checkFsharpImage(call, published) {
  * methods that the runtime cannot report on, because it inlines them. Both are checked here against
  * the listing of a process, which is the only other place the same numbers can be read from.
  */
-async function checkPackedImageMap(call, published) {
+async function checkPackedImageMap(call: EngineCall, published: boolean) {
   if (!published) {
     console.log('  skip the packed map checks — the fixture could not be published');
     return;
@@ -519,11 +688,11 @@ async function checkPackedImageMap(call, published) {
 
   const types = await call('assembly/types', { path: r2rDebugAssembly });
   const methodType = types.find((type) => type.fullName === 'R2RDebug.Methods');
-  const members = await call('assembly/members', { path: r2rDebugAssembly, token: methodType.token });
+  const members = await call('assembly/members', { path: r2rDebugAssembly, token: methodType!.token });
 
-  const listing = async (name) => {
+  const listing = async (name: string) => {
     const member = members.find((candidate) => candidate.name === name);
-    return call('view/asm', { path: r2rDebugAssembly, token: member.token, optimized: false, source: 'image' });
+    return call('view/asm', { path: r2rDebugAssembly, token: member!.token, optimized: false, source: 'image' });
   };
 
   const sum = await listing('Sum');
@@ -538,7 +707,7 @@ async function checkPackedImageMap(call, published) {
   // its neighbour, which is what these two checks would have caught.
   const grade = await listing('Grade');
   const countdown = await listing('Countdown');
-  const addressOf = (text) => /bytes of code at (0x[0-9a-f]+)/.exec(text)?.[1];
+  const addressOf = (text: string) => /bytes of code at (0x[0-9a-f]+)/.exec(text)?.[1];
   check(
     'a method without a fixup in its entry finds its own code',
     addressOf(grade.text) !== addressOf(countdown.text),
@@ -552,7 +721,7 @@ async function checkPackedImageMap(call, published) {
     check('the published fixture of the packed map can be started', ready);
     if (ready) {
       await call('live/attach', { pid: target.pid });
-      const live = await call('view/asmLive', { path: r2rDebugAssembly, token: members.find((member) => member.name === 'Sum').token });
+      const live = await call('view/asmLive', { path: r2rDebugAssembly, token: members.find((member) => member.name === 'Sum')!.token });
       check(
         'the packed map agrees with the runtime instruction for instruction',
         labelsOf(live.text).length > 5 && labelsOf(live.text).join(' ') === labelsOf(sum.text).join(' '),
@@ -575,7 +744,7 @@ async function checkPackedImageMap(call, published) {
  * instruction it implements comes out of the image as well, which is what makes the listing of a file
  * as exact as the listing of a process, so these checks compare the two.
  */
-async function checkImageCode(call, published) {
+async function checkImageCode(call: EngineCall, published: PublishedImages) {
   if (!published['linux-x64']) {
     console.log('  skip the image checks — the fixture could not be published');
     return;
@@ -583,11 +752,11 @@ async function checkImageCode(call, published) {
 
   const types = await call('assembly/types', { path: r2rAssembly });
   const targetType = types.find((type) => type.fullName === 'LiveTarget.Target');
-  const members = await call('assembly/members', { path: r2rAssembly, token: targetType.token });
+  const members = await call('assembly/members', { path: r2rAssembly, token: targetType!.token });
   const describe = members.find((member) => member.name === 'Describe');
   const guard = members.find((member) => member.name === 'Guard');
 
-  const image = await call('view/asm', { path: r2rAssembly, token: describe.token, source: 'image' });
+  const image = await call('view/asm', { path: r2rAssembly, token: describe!.token, source: 'image' });
   check('the image view names its source', image.text.includes('(read from the image)'), image.text.split('\n')[0]);
   check('the image view names the target of the image', image.text.includes('ReadyToRun x64 code'), image.text.split('\n')[1]);
   check('the image view holds the instructions of the method', /\bpush\b|\bmov\b|\bcmp\b/.test(image.text), '');
@@ -600,7 +769,7 @@ async function checkImageCode(call, published) {
     image.text.split('\n').pop(),
   );
 
-  const imageBlocks = image.blocks.filter((block) => block.methodToken === describe.token);
+  const imageBlocks = image.blocks.filter((block) => block.methodToken === describe!.token);
   check('the image view anchors every instruction to its IL offset', imageBlocks.length > 1, String(imageBlocks.length));
   check('the blocks of the image view are single IL instructions', imageBlocks.every((block) => block.ilEnd === block.ilStart + 1), JSON.stringify(imageBlocks[0]));
   check('the blocks of the image view name the source of their IL', imageBlocks.some((block) => block.sourceFile === liveSource), JSON.stringify(imageBlocks[0]));
@@ -612,7 +781,7 @@ async function checkImageCode(call, published) {
     check('the published image can be started for comparison', ready);
     if (ready) {
       await call('live/attach', { pid: target.pid });
-      const liveView = await call('view/asmLive', { path: r2rAssembly, token: describe.token });
+      const liveView = await call('view/asmLive', { path: r2rAssembly, token: describe!.token });
       const liveSize = Number(/; ReadyToRun, (\d+) bytes/.exec(liveView.text)?.[1] ?? 0);
       const imageSize = Number(/; (\d+) bytes of code/.exec(image.text)?.[1] ?? 0);
       check('the image and the live route agree on the size of the code', liveSize > 0 && liveSize === imageSize, `${liveSize} vs ${imageSize}`);
@@ -637,12 +806,12 @@ async function checkImageCode(call, published) {
   }
 
   // Compiling on this machine stays available, and is what the other assemblies use.
-  const jit = await call('view/asm', { path: r2rAssembly, token: describe.token, source: 'jit', optimized: false });
+  const jit = await call('view/asm', { path: r2rAssembly, token: describe!.token, source: 'jit', optimized: false });
   check('the jit route can be requested explicitly', jit.text.includes('Assembly listing for method'), jit.text.split('\n')[4]);
 
   const plain = await call('view/asm', { path: fixtureAssembly, token: 0x06000002, source: 'image' }).then(
     () => undefined,
-    (error) => error.message,
+    (error: Error) => error.message,
   );
   check('an assembly without precompiled code explains itself', /not a ReadyToRun image/.test(plain ?? ''), plain);
 
@@ -651,18 +820,18 @@ async function checkImageCode(call, published) {
     return;
   }
 
-  const arm64 = await call('view/asm', { path: r2rArm64Assembly, token: describe.token, source: 'image' });
+  const arm64 = await call('view/asm', { path: r2rArm64Assembly, token: describe!.token, source: 'image' });
   check('an arm64 image is read on an x64 machine', arm64.text.includes('ReadyToRun arm64 code'), arm64.text.split('\n')[1]);
   check('the arm64 listing holds arm64 instructions', /\bstp\b|\bldr\b|\badd x\d/.test(arm64.text), '');
   check('the arm64 listing holds no x64 instructions', !/\bpush r(ax|bp|15)\b/.test(arm64.text), '');
   check('the arm64 listing reports the size of the code', /; \d+ bytes of code at 0x[0-9a-f]+/.test(arm64.text), arm64.text.split('\n')[5]);
   check('the arm64 listing marks further code of the same method', arm64.text.includes('further code of the same method'), '');
-  check('the arm64 listing links the method to its token', arm64.blocks.some((block) => block.methodToken === describe.token), '');
+  check('the arm64 listing links the method to its token', arm64.blocks.some((block) => block.methodToken === describe!.token), '');
   check('the arm64 listing names the IL instruction of an instruction', /; IL_[0-9a-f]{4}/.test(arm64.text), firstLabel(arm64.text));
 
   // A different method of the same image produces a different listing, which is what makes the
   // mapping from a method to its code trustworthy rather than a single lucky hit.
-  const arm64Guard = await call('view/asm', { path: r2rArm64Assembly, token: guard.token, source: 'image' });
+  const arm64Guard = await call('view/asm', { path: r2rArm64Assembly, token: guard!.token, source: 'image' });
   check('another method of the arm64 image gets its own code', arm64Guard.text !== arm64.text && arm64Guard.text.includes('ReadyToRun arm64 code'), '');
   check('the code of the arm64 methods does not overlap', !arm64Guard.text.includes(/; \d+ bytes of code at (0x[0-9a-f]+)/.exec(arm64.text)?.[1] ?? 'nothing'), '');
 }
@@ -671,7 +840,7 @@ async function checkImageCode(call, published) {
  * An assembly that carries precompiled code this build cannot read must say so: the listing then
  * comes from this machine, and pretending it were the code in the file would be a lie.
  */
-async function checkUnreadableImage(call, published) {
+async function checkUnreadableImage(call: EngineCall, published: PublishedImages) {
   if (!published['linux-x64']) {
     console.log('  skip the unreadable image checks — the fixture could not be published');
     return;
@@ -702,7 +871,7 @@ async function checkUnreadableImage(call, published) {
 
     const image = await call('view/fileAsm', { path: copy, file: source, source: 'image' }).then(
       () => undefined,
-      (error) => error.message,
+      (error: Error) => error.message,
     );
     check('asking for the image of another architecture explains itself', /linux-arm/.test(image ?? ''), image);
   } finally {
@@ -716,8 +885,8 @@ async function checkUnreadableImage(call, published) {
  * native images for every platform the package ships, so all three container formats are at hand
  * without a compiler: ELF for Linux, Mach-O for macOS and PE for Windows.
  */
-async function checkNativeImages(call) {
-  const images = [
+async function checkNativeImages(call: EngineCall) {
+  const images: [string, string, RegExp][] = [
     ['linux-x64', 'ELF', /is a native ELF image for x86-64/],
     ['linux-arm64', 'ELF', /is a native ELF image for AArch64/],
     ['osx-arm64', 'Mach-O', /is a native Mach-O image \(macOS\)/],
@@ -733,7 +902,7 @@ async function checkNativeImages(call) {
 
     const message = await call('assembly/info', { path: file }).then(
       () => undefined,
-      (error) => error.message,
+      (error: Error) => error.message,
     );
     check(`a native ${format} image (${rid}) is named as one`, expected.test(message ?? ''), message);
     check(`the ${rid} diagnosis says there is no IL to read`, /no IL/.test(message ?? ''), message);
@@ -746,7 +915,7 @@ async function checkNativeImages(call) {
     fs.writeFileSync(text, 'this file is not an image at all\n');
     const message = await call('assembly/info', { path: text }).then(
       () => undefined,
-      (error) => error.message,
+      (error: Error) => error.message,
     );
     check(
       'a file that is neither PE nor ELF is reported as not an assembly',
@@ -758,7 +927,7 @@ async function checkNativeImages(call) {
     fs.writeFileSync(short, 'MF');
     const tiny = await call('view/fileIl', { path: short, file: 'x.cs' }).then(
       () => undefined,
-      (error) => error.message,
+      (error: Error) => error.message,
     );
     check('a file too short to hold a header is reported as one', /too short to be an assembly/.test(tiny ?? ''), tiny);
     check('the diagnosis reaches the view that was asked for', /tiny is/.test(tiny ?? ''), tiny);
@@ -784,7 +953,7 @@ async function checkNativeImages(call) {
  * beginning of the examined tail — a small file would let the reader pass without ever having to
  * place the manifest in the file it was found in.
  */
-async function checkCompressedSingleFile(call, published) {
+async function checkCompressedSingleFile(call: EngineCall, published: boolean) {
   if (!published) {
     console.log('  skip the compressed single file checks — the fixture could not be published');
     return;
@@ -826,7 +995,7 @@ async function checkCompressedSingleFile(call, published) {
   check('a compressed bundle is read again from the same place', rebuilt.name === info.name && rebuilt.path === info.path, rebuilt.path);
 }
 
-async function checkSingleFile(call, published) {
+async function checkSingleFile(call: EngineCall, published: boolean) {
   if (!published) {
     console.log('  skip the single file checks — the fixture could not be published');
     return;
@@ -868,7 +1037,7 @@ async function checkSingleFile(call, published) {
     fs.writeFileSync(truncated, bytes.subarray(0, bytes.length - 2048));
     const broken = await call('assembly/info', { path: truncated }).then(
       () => undefined,
-      (error) => error.message,
+      (error: Error) => error.message,
     );
     check('a single file application whose manifest is gone is not read', /native ELF image/.test(broken ?? ''), broken);
   } finally {
@@ -881,7 +1050,7 @@ async function checkSingleFile(call, published) {
  * code. What makes that more than a listing is the debug information the compiler wrote beside the
  * image, which names every method and the line of source its addresses came from.
  */
-async function checkNativeImage(call, published) {
+async function checkNativeImage(call: EngineCall, published: boolean) {
   // An image whose symbols were stripped away has no methods to list, and saying so is the whole of
   // what a reader can be told about it. The bundled assembler is such an image on every platform.
   const stripped = path.join(root, 'out', 'engine', 'ilasm', 'linux-x64', 'ilasm');
@@ -921,10 +1090,10 @@ async function checkNativeImage(call, published) {
   check('native/methods narrows to one source file', inFile.length >= 3 && inFile.every((method) => method.file === aotSource), String(inFile.length));
   check('native/methods of a file are the ones written in it', inFile.some((method) => method.name === 'Describe'), inFile.map((method) => method.name).join(','));
 
-  const view = await call('native/asm', { path: aotImage, address: sum.address });
+  const view = await call('native/asm', { path: aotImage, address: sum!.address });
   check('native/asm disassembles the method', /\bpush\b|\bmov\b|\bxor\b/.test(view.text), view.text.split('\n').slice(0, 6).join(' | '));
   check('native/asm names the method it disassembled', view.text.includes('AotTarget.Target.Sum'), view.text.split('\n')[2]);
-  check('native/asm reports the size and the address of the code', new RegExp(`; ── AotTarget\\.Target\\.Sum \\(${sum.size} bytes at 0x${sum.address.toString(16)}\\)`).test(view.text), view.text.split('\n')[2]);
+  check('native/asm reports the size and the address of the code', new RegExp(`; ── AotTarget\\.Target\\.Sum \\(${sum!.size} bytes at 0x${sum!.address.toString(16)}\\)`).test(view.text), view.text.split('\n')[2]);
   check('native/asm reports the language of the listing', view.language === 'il-asm', view.language);
   check('native/asm says it has debug information', view.hasDebugInfo === true, String(view.hasDebugInfo));
   check('native/asm anchors instructions to source lines', view.blocks.length >= 4, String(view.blocks.length));
@@ -950,7 +1119,7 @@ async function checkNativeImage(call, published) {
 
   const other = await call('native/asm', { path: aotImage, address: 1 }).then(
     () => undefined,
-    (error) => error.message,
+    (error: Error) => error.message,
   );
   check('native/asm reports an address that is not a method', /starts at 0x1/.test(other ?? ''), other);
 }
@@ -959,22 +1128,22 @@ async function checkNativeImage(call, published) {
  * A property accessor is a method, and C# has no syntax for one on its own: the views have to show
  * the property or event it belongs to, while the IL and ASM panes keep the accessor they were asked for.
  */
-async function checkAccessors(call) {
+async function checkAccessors(call: EngineCall) {
   const scope = await call('file/scope', { path: fixtureAssembly, file: fixtureSource, includeCompilerGenerated: false });
   const accessor = scope.members.find((member) => member.name === 'get_Count');
   check('the file scope reports the property of an accessor', accessor?.owner === 'Count' && accessor?.accessor === 'get', JSON.stringify(accessor));
   check('a plain method reports no accessor owner', scope.members.find((member) => member.name === 'Add')?.owner == null, '');
 
-  const csharp = await call('view/csharp', { path: fixtureAssembly, token: accessor.token });
+  const csharp = await call('view/csharp', { path: fixtureAssembly, token: accessor!.token });
   check('the C# view of an accessor is the property', /public int Count =>\s*_history\.Count;/.test(csharp.text), csharp.text.split('\n').slice(0, 4).join(' | '));
   check('the C# view says which member it shows instead', csharp.text.includes('this accessor belongs to'), '');
   check(
     'the C# blocks keep the accessor token, so the panes stay linked',
-    csharp.blocks.length === 1 && csharp.blocks[0].methodToken === accessor.token,
+    csharp.blocks.length === 1 && csharp.blocks[0].methodToken === accessor!.token,
     String(csharp.blocks[0]?.methodToken),
   );
 
-      const il = await call('view/il', { path: fixtureAssembly, token: accessor.token });
+      const il = await call('view/il', { path: fixtureAssembly, token: accessor!.token });
   check('the IL view keeps the accessor itself', il.text.includes('get_Count') && !il.text.includes('public int Count'), il.text.split('\n').slice(0, 3).join(' | '));
 
   const type = await call('view/csharp', { path: fixtureAssembly, token: 0x02000002 });
@@ -987,7 +1156,7 @@ async function checkAccessors(call) {
  * A rebuild writes to the same path as the previous build, so a cached view has to notice that the
  * file changed instead of serving the assembly it read first.
  */
-async function checkRebuiltAssembly(call) {
+async function checkRebuiltAssembly(call: EngineCall) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'ilasm-dotnet-rebuild-'));
   const copy = path.join(directory, 'SampleLib.dll');
   try {
@@ -1016,12 +1185,12 @@ async function checkRebuiltAssembly(call) {
  * as it was written, the low-level one shows what the compiler made of it — generated state machines
  * and display classes included, and without the sugar that hides them.
  */
-async function checkCSharpFlavours(call, members) {
+async function checkCSharpFlavours(call: EngineCall, members: MemberSummary[]) {
   const add = members.find((member) => member.name === 'Add');
   const evens = members.find((member) => member.name === 'Evens');
 
-  const highAdd = await call('view/csharp', { path: fixtureAssembly, token: add.token });
-  const lowAdd = await call('view/csharp', { path: fixtureAssembly, token: add.token, lowLevel: true });
+  const highAdd = await call('view/csharp', { path: fixtureAssembly, token: add!.token });
+  const lowAdd = await call('view/csharp', { path: fixtureAssembly, token: add!.token, lowLevel: true });
   check(
     'the high level view keeps an initialised local together',
     /int result = a \+ b;/.test(highAdd.text),
@@ -1034,12 +1203,12 @@ async function checkCSharpFlavours(call, members) {
   );
   check(
     'the low level view stays a C# view of the same member',
-    lowAdd.blocks.some((block) => block.methodToken === add.token) && lowAdd.language === 'csharp',
+    lowAdd.blocks.some((block) => block.methodToken === add!.token) && lowAdd.language === 'csharp',
     String(lowAdd.blocks.length),
   );
 
-  const highEvens = await call('view/csharp', { path: fixtureAssembly, token: evens.token });
-  const lowEvens = await call('view/csharp', { path: fixtureAssembly, token: evens.token, lowLevel: true });
+  const highEvens = await call('view/csharp', { path: fixtureAssembly, token: evens!.token });
+  const lowEvens = await call('view/csharp', { path: fixtureAssembly, token: evens!.token, lowLevel: true });
   check('the high level view reconstructs the iterator', highEvens.text.includes('yield return'), '');
   check(
     'the low level view shows the generated state machine instead',
@@ -1067,7 +1236,7 @@ async function checkCSharpFlavours(call, members) {
  * The ILASM round-trip is the independent check on the listing: ilasm is a real assembler, so a
  * listing it accepts and turns back into an equivalent assembly is real IL, not just readable text.
  */
-async function checkRoundTrip(call) {
+async function checkRoundTrip(call: EngineCall) {
   const outputDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'ilasm-dotnet-roundtrip-'));
   const result = await call('assemble/roundTrip', { path: fixtureAssembly, outputDirectory });
 
@@ -1113,7 +1282,7 @@ async function checkRoundTrip(call) {
  * running process. The runtime still reports the map from a native address to an IL offset for them,
  * which is what this verifies: the same exact link, on precompiled code.
  */
-async function checkReadyToRun(call, available) {
+async function checkReadyToRun(call: EngineCall, available: boolean) {
   if (!available) {
     console.log('  skip the ReadyToRun checks — the fixture could not be published');
     return;
@@ -1142,7 +1311,7 @@ async function checkReadyToRun(call, available) {
     const describe = members.find((member) => member.name === 'Describe');
     check('the published image lists its methods', Boolean(describe));
 
-    const live = await call('view/asmLive', { path: r2rAssembly, token: describe.token });
+    const live = await call('view/asmLive', { path: r2rAssembly, token: describe!.token });
     check('precompiled code is labelled ReadyToRun', live.text.includes('; ReadyToRun,'), live.text.split('\n')[4]);
     const annotations = (live.text.match(/; IL_[0-9A-Fa-f]{4}/g) ?? []).length;
     check('ReadyToRun instructions carry their IL offsets', annotations >= 5, String(annotations));
@@ -1155,7 +1324,7 @@ async function checkReadyToRun(call, available) {
     );
 
     // The offsets must belong to the IL of that method, exactly like the JIT route.
-    const il = await call('view/il', { path: r2rAssembly, token: describe.token });
+    const il = await call('view/il', { path: r2rAssembly, token: describe!.token });
     const ilOffsets = new Set((il.text.match(/IL_([0-9A-Fa-f]{4}):/g) ?? []).map((label) => label.slice(3, 7).toUpperCase()));
     const unknown = [...new Set(mapped.map((block) => block.ilStart.toString(16).toUpperCase().padStart(4, '0')))].filter(
       (offset) => !ilOffsets.has(offset),
@@ -1177,7 +1346,7 @@ async function checkReadyToRun(call, available) {
     // crossgen2 inlines small methods, so a method of the file may have no code of its own. Either
     // outcome has to be reported: code with offsets, or a note that says why there is none.
     const inlined = members.find((member) => member.name === 'Add');
-    const inlinedLive = await call('view/asmLive', { path: r2rAssembly, token: inlined.token });
+    const inlinedLive = await call('view/asmLive', { path: r2rAssembly, token: inlined!.token });
     const explains = (inlinedLive.notes ?? []).some((note) => note.includes('not been compiled'));
     check(
       'a method without precompiled code of its own explains itself',
@@ -1200,7 +1369,7 @@ async function checkReadyToRun(call, available) {
  * The live route is the only one that carries the JIT mapping from a native address to an IL offset,
  * so this starts a real program, inspects it and cross-checks the offsets against the IL listing.
  */
-async function checkLiveProcess(call) {
+async function checkLiveProcess(call: EngineCall) {
   const target = startTarget(liveAssembly);
 
   try {
@@ -1225,12 +1394,12 @@ async function checkLiveProcess(call) {
     const targetType = types.find((type) => type.fullName === 'LiveTarget.Target');
     check('the live assembly can also be read from disk', Boolean(targetType));
 
-    const members = await call('assembly/members', { path: liveAssembly, token: targetType.token });
+    const members = await call('assembly/members', { path: liveAssembly, token: targetType!.token });
     const describe = members.find((member) => member.name === 'Describe');
     const add = members.find((member) => member.name === 'Add');
     check('the live assembly lists the warmed methods', Boolean(describe) && Boolean(add));
 
-    const live = await call('view/asmLive', { path: liveAssembly, token: describe.token });
+    const live = await call('view/asmLive', { path: liveAssembly, token: describe!.token });
     check('the live view reports the il-asm language', live.language === 'il-asm', live.language);
     check('the live view reports the process it came from', live.text.includes(`process ${target.pid}`), live.text.split('\n')[1]);
     check('the live view contains real instructions', /\bmov\b|\bpush\b|\bcmp\b/.test(live.text), '');
@@ -1252,7 +1421,7 @@ async function checkLiveProcess(call) {
     );
 
     // The offsets must be the IL offsets of that very method, not something invented.
-    const il = await call('view/il', { path: liveAssembly, token: describe.token });
+    const il = await call('view/il', { path: liveAssembly, token: describe!.token });
     const ilOffsets = new Set(
       (il.text.match(/IL_([0-9A-Fa-f]{4}):/g) ?? []).map((label) => label.slice(3, 7).toUpperCase()),
     );
@@ -1274,7 +1443,7 @@ async function checkLiveProcess(call) {
       JSON.stringify(misaligned.slice(0, 3)),
     );
 
-    const addLive = await call('view/asmLive', { path: liveAssembly, token: add.token });
+    const addLive = await call('view/asmLive', { path: liveAssembly, token: add!.token });
     check('a second method can be inspected from the same session', /; IL_[0-9A-Fa-f]{4}/.test(addLive.text), addLive.text.slice(0, 120));
 
     const detach = await call('live/detach');
@@ -1282,7 +1451,7 @@ async function checkLiveProcess(call) {
 
     let refused = false;
     try {
-      await call('view/asmLive', { path: liveAssembly, token: describe.token });
+      await call('view/asmLive', { path: liveAssembly, token: describe!.token });
     } catch {
       refused = true;
     }
@@ -1318,12 +1487,12 @@ async function main() {
     check('assembly/types lists SampleLib.Calculator', Boolean(calculator));
     check('assembly/types classifies the type as a class', calculator?.kind === 'class', calculator?.kind);
 
-    const members = await call('assembly/members', { path: fixtureAssembly, token: calculator.token });
+    const members = await call('assembly/members', { path: fixtureAssembly, token: calculator!.token });
     const names = members.map((member) => member.name);
     check('assembly/members lists the methods', names.includes('Add') && names.includes('Describe'), names.join(','));
     check('assembly/members renders readable signatures', members.some((member) => member.signature.includes('int32')), members[0]?.signature);
 
-    const il = await call('view/il', { path: fixtureAssembly, token: calculator.token });
+    const il = await call('view/il', { path: fixtureAssembly, token: calculator!.token });
     check('view/il emits a class header', il.text.includes('.class') && il.text.includes('SampleLib.Calculator'));
     check('view/il emits IL labels', /IL_0000:/.test(il.text));
     check('view/il annotates sequence points', il.text.includes('sequence point'));
@@ -1333,7 +1502,7 @@ async function main() {
     check('view/il links instructions to source lines', mappedIl.length > 5, `${mappedIl.length} of ${il.blocks.length}`);
     check(
       'view/il source paths point at the fixture file',
-      mappedIl.every((block) => block.sourceFile.endsWith('Calculator.cs')),
+      mappedIl.every((block) => block.sourceFile!.endsWith('Calculator.cs')),
       mappedIl[0]?.sourceFile,
     );
     check(
@@ -1342,18 +1511,18 @@ async function main() {
       String(mappedIl[0]?.methodToken),
     );
 
-    const csharp = await call('view/csharp', { path: fixtureAssembly, token: calculator.token });
+    const csharp = await call('view/csharp', { path: fixtureAssembly, token: calculator!.token });
     check('view/csharp declares the type', csharp.text.includes('class Calculator'));
     check('view/csharp renders the members', csharp.text.includes('public int Add') && csharp.text.includes('public string Describe'));
     check('view/csharp hoists using directives', csharp.text.startsWith('using '), csharp.text.split('\n')[0]);
     check('view/csharp produces member blocks', csharp.blocks.length >= 4, String(csharp.blocks.length));
 
-    const methodToken = members.find((member) => member.name === 'Describe').token;
+    const methodToken = members.find((member) => member.name === 'Describe')!.token;
     const csharpBlock = csharp.blocks.find((block) => block.methodToken === methodToken);
     check('view/csharp has a block for Describe', Boolean(csharpBlock));
     check(
       'view/csharp member block covers the class line range',
-      Boolean(csharpBlock) && csharp.text.split('\n')[csharpBlock.textStartLine - 1].includes('Describe'),
+      Boolean(csharpBlock) && csharp.text.split('\n')[csharpBlock!.textStartLine - 1].includes('Describe'),
       csharpBlock ? csharp.text.split('\n')[csharpBlock.textStartLine - 1] : undefined,
     );
 
@@ -1387,7 +1556,7 @@ async function main() {
     }
 
     // The tree knows tokens while a view is of a file, so a node has to be resolved to a file.
-    const fileOfType = await call('map/fileOf', { path: fixtureAssembly, token: calculator.token });
+    const fileOfType = await call('map/fileOf', { path: fixtureAssembly, token: calculator!.token });
     check('map/fileOf resolves a type to the source file it was compiled from', /Calculator\.cs$/.test(fileOfType.file ?? ''), String(fileOfType.file));
     check('map/fileOf spells the path the way the PDB does', fileOfType.file === fixtureSource, String(fileOfType.file));
 
@@ -1408,7 +1577,7 @@ async function main() {
     if (fs.existsSync(playgroundAssembly)) {
       const playgroundTypes = await call('assembly/types', { path: playgroundAssembly, limit: 200 });
       const program = playgroundTypes.find((type) => type.fullName === 'Playground.Program');
-      const fileOfAsyncType = await call('map/fileOf', { path: playgroundAssembly, token: program.token });
+      const fileOfAsyncType = await call('map/fileOf', { path: playgroundAssembly, token: program!.token });
       check(
         'map/fileOf resolves a type whose bodies live in a generated nested type',
         /Program\.cs$/.test(fileOfAsyncType.file ?? ''),
@@ -1461,7 +1630,7 @@ async function main() {
     const stripped = path.join(os.tmpdir(), `ilasm-dotnet-stripped-${process.pid}.dll`);
     fs.writeFileSync(stripped, fs.readFileSync(fixtureAssembly));
     try {
-      const fileOfStripped = await call('map/fileOf', { path: stripped, token: calculator.token });
+      const fileOfStripped = await call('map/fileOf', { path: stripped, token: calculator!.token });
       check('map/fileOf reports nothing for an assembly without a PDB', !fileOfStripped.file, String(fileOfStripped.file));
     } finally {
       fs.rmSync(stripped, { force: true });
@@ -1523,12 +1692,12 @@ async function main() {
 
     await checkCSharpFlavours(call, members);
 
-    const wholeType = await call('view/csharp', { path: fixtureAssembly, token: calculator.token, includeCompilerGenerated: true });
+    const wholeType = await call('view/csharp', { path: fixtureAssembly, token: calculator!.token, includeCompilerGenerated: true });
     check('includeCompilerGenerated exposes compiler generated types', wholeType.text.includes('assembly type: SampleLib.Calculator.<'), String(wholeType.blocks.length));
 
     // A type has no single body: its native code is every body it declares, which is what the view of
     // a type node has to produce. Failing here would leave the tab showing whatever it showed before.
-    const typeAsm = await call('view/asm', { path: fixtureAssembly, token: calculator.token, optimized: true, source: 'auto' });
+    const typeAsm = await call('view/asm', { path: fixtureAssembly, token: calculator!.token, optimized: true, source: 'auto' });
     check('view/asm disassembles a type through its methods', typeAsm.text.includes('Assembly listing for method'), typeAsm.text.split('\n').slice(0, 4).join(' | '));
     check(
       'view/asm of a type lists more than one method',
@@ -1538,7 +1707,7 @@ async function main() {
     check('view/asm of a type anchors its methods to their tokens', typeAsm.blocks.length > 1, String(typeAsm.blocks.length));
 
     // ASM: the JIT must disassemble the method, and the listing must be attributed to its token.
-    const addToken = members.find((member) => member.name === 'Add').token;
+    const addToken = members.find((member) => member.name === 'Add')!.token;
     const asm = await call('view/asm', { path: fixtureAssembly, token: addToken, optimized: true });
     check('view/asm reports the il-asm language', asm.language === 'il-asm', asm.language);
     check('view/asm produces a JIT listing', /; Assembly listing for method /.test(asm.text), asm.text.split('\n')[4]);
@@ -1561,8 +1730,8 @@ async function main() {
     if (fs.existsSync(releaseAssembly)) {
       const releaseTypes = await call('assembly/types', { path: releaseAssembly });
       const releaseCalculator = releaseTypes.find((type) => type.fullName === 'SampleLib.Calculator');
-      const releaseMembers = await call('assembly/members', { path: releaseAssembly, token: releaseCalculator.token });
-      const releaseAdd = releaseMembers.find((member) => member.name === 'Add').token;
+      const releaseMembers = await call('assembly/members', { path: releaseAssembly, token: releaseCalculator!.token });
+      const releaseAdd = releaseMembers.find((member) => member.name === 'Add')!.token;
       const optimized = await call('view/asm', { path: releaseAssembly, token: releaseAdd, optimized: true });
 
       check('view/asm produces optimized code for a release build', optimized.text.includes('FullOpts'), (optimized.text.match(/; (FullOpts|MinOpts)[^\r\n]*/) ?? ['none'])[0]);

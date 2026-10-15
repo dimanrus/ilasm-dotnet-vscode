@@ -21,8 +21,10 @@ import {
   statusText,
   subtitleFor,
 } from '../out/test/viewer/viewSession.js';
+import type { CacheKeyOptions, ScopeMember, ViewerSession } from '../out/test/viewer/viewSession.js';
 
-const session = (overrides = {}) => ({
+/** A viewer session with everything a test does not override filled in. */
+const session = (overrides: Partial<ViewerSession> = {}): ViewerSession => ({
   assembly: '/out/SampleLib.dll',
   file: '/src/Calculator.cs',
   kind: 'il',
@@ -30,13 +32,13 @@ const session = (overrides = {}) => ({
   ...overrides,
 });
 
-const members = [
+const members: ScopeMember[] = [
   { token: 100663297, kind: 'constructor', name: '.ctor', declaringType: 'SampleLib.Calculator' },
   { token: 100663298, kind: 'method', name: 'Add', declaringType: 'SampleLib.Calculator' },
   { token: 100663299, kind: 'method', name: 'Describe', declaringType: 'SampleLib.Calculator' },
 ];
 
-const options = { includeCompilerGenerated: false, optimized: true };
+const options: Required<Pick<CacheKeyOptions, 'includeCompilerGenerated' | 'optimized'>> = { includeCompilerGenerated: false, optimized: true };
 
 test('the whole file maps to the file endpoints', () => {
   assert.equal(requestFor(session(), options).method, 'view/fileIl');
@@ -159,12 +161,16 @@ test('the clickable row offers every view plus the scope, and marks the active o
     lenses.slice(0, KIND_ORDER.length).map((lens) => lens.title.replace('● ', '')),
     KIND_ORDER.map((kind) => KIND_LABELS[kind]),
   );
-  assert.equal(lenses.at(-1).title, 'Scope: Entire file');
+  const scopeEntry = lenses.at(-1);
+  assert.ok(scopeEntry);
+  assert.equal(scopeEntry.title, 'Scope: Entire file');
 });
 
 test('the scope entry of the row names the selected member', () => {
   const lenses = lensSpecs(session({ scope: '100663298' }), members);
-  assert.equal(lenses.at(-1).title, 'Scope: Add()');
+  const scopeEntry = lenses.at(-1);
+  assert.ok(scopeEntry);
+  assert.equal(scopeEntry.title, 'Scope: Add()');
 });
 
 test('the low level view is asked for with the decompiler transformations off', () => {
@@ -212,7 +218,8 @@ test('the status bar text handles Windows paths', () => {
 
 // The native route: an image of machine code has no tokens, so a method is named by the address of
 // its code and the whole-file scope is the set of methods one source file was compiled into.
-const nativeSession = (overrides = {}) => ({
+/** A session of a native image: machine code is the only view it has. */
+const nativeSession = (overrides: Partial<ViewerSession> = {}): ViewerSession => ({
   assembly: '/out/AotTarget',
   file: '/src/Target.cs',
   kind: 'asm',
@@ -221,7 +228,7 @@ const nativeSession = (overrides = {}) => ({
   ...overrides,
 });
 
-const nativeMembers = [
+const nativeMembers: ScopeMember[] = [
   {
     token: 0,
     address: 442944,

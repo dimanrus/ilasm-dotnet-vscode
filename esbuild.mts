@@ -1,8 +1,8 @@
 import * as esbuild from 'esbuild';
 
-const watch = process.argv.includes('--watch');
+const watch: boolean = process.argv.includes('--watch');
 
-const options = {
+const options: esbuild.BuildOptions = {
   entryPoints: ['src/extension.ts'],
   bundle: true,
   format: 'cjs',
@@ -16,7 +16,7 @@ const options = {
 };
 
 if (watch) {
-  const context = await esbuild.context(options);
+  const context: esbuild.BuildContext = await esbuild.context(options);
   await context.watch();
   console.log('watching for changes...');
 } else {

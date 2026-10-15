@@ -7,9 +7,43 @@ import * as path from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
+/** The parts of the manifest this test reads; anything else is left untyped on purpose. */
+interface MenuEntry {
+  command: string;
+  when?: string;
+  group?: string;
+}
+
+interface KeyBinding {
+  command: string;
+  key?: string;
+  mac?: string;
+  when?: string;
+}
+
+interface Contributes {
+  commands?: { command: string; title: string }[];
+  menus?: Record<string, MenuEntry[]>;
+  keybindings?: KeyBinding[];
+  views?: Record<string, { id: string }[]>;
+  viewsContainers?: { activitybar?: { id: string; icon?: string }[] };
+  grammars?: { language: string; scopeName: string; path: string }[];
+  languages?: { id: string; configuration?: string }[];
+  configuration?: { properties?: Record<string, unknown> };
+}
+
+interface Manifest {
+  displayName?: string;
+  description?: string;
+  main?: string;
+  engines?: { vscode?: string; node?: string };
+  activationEvents?: string[];
+  contributes?: Contributes;
+}
+
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const manifest = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
-const contributes = manifest.contributes ?? {};
+const manifest = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')) as Manifest;
+const contributes: Contributes = manifest.contributes ?? {};
 
 const declaredCommands = new Set((contributes.commands ?? []).map((command) => command.command));
 
@@ -21,7 +55,7 @@ test('the manifest declares a display name, main entry and publisher', () => {
 });
 
 test('every command referenced by a menu is declared', () => {
-  const referenced = new Set();
+  const referenced = new Set<string>();
   for (const entries of Object.values(contributes.menus ?? {})) {
     for (const entry of entries) {
       referenced.add(entry.command);
@@ -92,7 +126,7 @@ test('a language condition lists every language explicitly', () => {
     ...(contributes.menus?.['editor/context'] ?? []).map((entry) => entry.when),
     ...(contributes.menus?.commandPalette ?? []).map((entry) => entry.when),
     ...(contributes.keybindings ?? []).map((entry) => entry.when),
-  ].filter(Boolean);
+  ].filter((when): when is string => Boolean(when));
 
   for (const when of whens) {
     if (!when.includes('editorLangId')) {
@@ -112,7 +146,7 @@ test('manifest file references exist', () => {
     contributes.viewsContainers?.activitybar?.[0]?.icon,
     ...(contributes.grammars ?? []).map((grammar) => grammar.path),
     ...(contributes.languages ?? []).map((language) => language.configuration).filter(Boolean),
-  ].filter(Boolean);
+  ].filter((reference): reference is string => Boolean(reference));
 
   for (const reference of references) {
     assert.ok(fs.existsSync(path.join(root, reference)), `${reference} is missing`);
@@ -127,7 +161,9 @@ test('the grammars target contributed languages', () => {
 });
 
 test('the IL grammar is valid JSON with a scope name', () => {
-  const grammarPath = path.join(root, contributes.grammars[0].path);
+  const [ilGrammar] = contributes.grammars ?? [];
+  assert.ok(ilGrammar, 'no grammar is contributed');
+  const grammarPath = path.join(root, ilGrammar.path);
   const grammar = JSON.parse(fs.readFileSync(grammarPath, 'utf8'));
   assert.equal(grammar.scopeName, 'source.il');
   assert.ok(grammar.repository.comments);
@@ -138,7 +174,7 @@ test('every key binding is unique and points at a declared command', () => {
   const bindings = contributes.keybindings ?? [];
   assert.ok(bindings.length > 0, 'no key binding is contributed');
 
-  const seen = new Set();
+  const seen = new Set<string>();
   for (const binding of bindings) {
     assert.ok(declaredCommands.has(binding.command), `unknown command in ${binding.key}`);
     assert.ok(binding.key, `${binding.command} has no key`);

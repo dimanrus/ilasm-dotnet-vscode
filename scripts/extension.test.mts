@@ -10,6 +10,9 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+// This suite collects its failures itself instead of asserting on the spot.
+void assert;
+
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(import.meta.url);
 const fixtureDirectory = path.join(root, 'test', 'fixtures', 'SampleLib');
@@ -33,11 +36,102 @@ const fsAssembly = path.join(fsDirectory, 'bin', 'Release', 'net10.0', 'FsTarget
 const singleDirectory = path.join(liveDirectory, 'bin', 'single');
 const singleImageFile = path.join(singleDirectory, 'LiveTarget');
 
-const failures = [];
+// The stub in scripts/vscode-stub.cts stands in for the VS Code API, so the shapes this suite reads
+// out of it are spelled out here instead of being imported from the real API.
+interface StubUri {
+  scheme: string;
+  fsPath: string;
+  path: string;
+  toString(): string;
+}
+
+interface StubDocument {
+  uri: StubUri;
+  languageId: string;
+  getText(): string;
+}
+
+interface StubPosition {
+  line: number;
+  character: number;
+}
+
+interface StubRange {
+  start: StubPosition;
+  end: StubPosition;
+}
+
+interface StubEditor {
+  document: StubDocument;
+  viewColumn: number;
+  selection: { active: StubPosition };
+  revealed: StubRange[];
+  decorations: Map<unknown, StubRange[]>;
+}
+
+interface StubEditorEdit {
+  insert(position: StubPosition, text: string): void;
+}
+
+interface StubStatusBarItem {
+  text: string;
+  tooltip?: string;
+  command?: string;
+}
+
+interface StubQuickPickItem {
+  label: string;
+  pid?: number;
+}
+
+interface StubCodeLens {
+  command?: { title: string; command: string };
+}
+
+interface StubCodeLensEntry {
+  selector: { scheme: string };
+  provider: { provideCodeLenses(document: StubDocument): StubCodeLens[] | undefined };
+}
+
+interface StubTreeNodeInfo {
+  name: string;
+  fullName: string;
+  path: string;
+}
+
+interface StubTreeNode {
+  kind: string;
+  info: StubTreeNodeInfo;
+  file?: string;
+  assembly?: string;
+  problem?: string;
+  method?: { fullName: string };
+}
+
+/** The workspace file search takes a plain glob or a base directory with the glob inside it. */
+type StubFindFilesPattern = string | { base: string; pattern: string };
+
+interface StubExtensionContext {
+  extensionPath: string;
+  subscriptions: { dispose(): void }[];
+  extension: { packageJSON: unknown };
+  storageUri: unknown;
+  globalStorageUri: unknown;
+}
+
+// Redirecting require('vscode') goes through the module loader, whose hook is internal to Node and
+// is not in the type definitions of node:module.
+declare module 'node:module' {
+  namespace Module {
+    function _load(request: string, parent: unknown, isMain: boolean): unknown;
+  }
+}
+
+const failures: string[] = [];
 let checkCount = 0;
 
 /** The newest modification time of the sources a build output is made of. */
-function newestMtime(directory, extension) {
+function newestMtime(directory: string, extension: string) {
   let newest = 0;
   for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
     if (entry.name === 'bin' || entry.name === 'obj' || entry.name === 'node_modules') {
@@ -86,7 +180,7 @@ function requireFreshEngine() {
   }
 }
 
-function check(name, condition, detail = '') {
+function check(name: string, condition: unknown, detail = '') {
   checkCount++;
   if (condition) {
     console.log(`  ok   ${name}`);
@@ -197,7 +291,7 @@ async function killLeftoverTargets() {
 
 /** Redirects require('vscode') to the in-memory stub before loading the bundle. */
 function loadExtension() {
-  const stubPath = path.join(root, 'scripts', 'vscode-stub.cjs');
+  const stubPath = path.join(root, 'scripts', 'vscode-stub.cts');
   const stub = require(stubPath);
   const originalLoad = Module._load;
   Module._load = function patched(request, parent, isMain) {
@@ -224,7 +318,7 @@ async function main() {
   const { extension, vscode } = loadExtension();
 
 /** Polls a predicate while the engine answers, which can take a moment for ASM. */
-async function waitFor(predicate, timeoutMs = 15000) {
+async function waitFor<T>(predicate: () => T, timeoutMs = 15000): Promise<T | undefined> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
     const value = predicate();
@@ -254,7 +348,7 @@ async function waitFor(predicate, timeoutMs = 15000) {
   state.workspaceFolders = [{ uri: vscode.Uri.file(root), name: 'ilasm-dotnet', index: 0 }];
 
   // The locator discovers the fixture the same way it would discover a real project.
-  state.findFiles = (pattern) => {
+  state.findFiles = (pattern: StubFindFilesPattern) => {
     const isRelative = pattern !== null && typeof pattern === 'object';
     const base = isRelative ? pattern.base : '';
     const glob = isRelative ? pattern.pattern : String(pattern ?? '');
@@ -272,7 +366,7 @@ async function waitFor(predicate, timeoutMs = 15000) {
 
   // The real host always fills in the storage locations, so the extension may rely on them.
   const storageDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'ilasm-dotnet-storage-'));
-  const context = {
+  const context: StubExtensionContext = {
     extensionPath: root,
     subscriptions: [],
     // The real host hands the extension's own manifest over as well.
@@ -308,9 +402,9 @@ async function waitFor(predicate, timeoutMs = 15000) {
   check('the assembly reports debug information', assemblies[0]?.info?.hasPdb === true);
 
   const types = await treeProvider.getChildren(assemblies[0]);
-  const calculator = types.find((node) => node.info?.fullName === 'SampleLib.Calculator');
+  const calculator = types.find((node: StubTreeNode) => node.info?.fullName === 'SampleLib.Calculator');
   check('the tree lists SampleLib.Calculator', Boolean(calculator));
-  check('the tree hides compiler generated types by default', !types.some((node) => node.info?.name?.startsWith('<')), types.map((n) => n.info?.name).join(','));
+  check('the tree hides compiler generated types by default', !types.some((node: StubTreeNode) => node.info?.name?.startsWith('<')), types.map((n: StubTreeNode) => n.info?.name).join(','));
 
   const members = await treeProvider.getChildren(calculator);
   check('the tree lists the members', members.length >= 4, String(members.length));
@@ -318,16 +412,16 @@ async function waitFor(predicate, timeoutMs = 15000) {
 
   // A node stands for a type or a member, and a click has to land in the single tab with the code of
   // it: the assembly explorer is where one reads code, and the switcher offers IL and ASM from there.
-  const describeMember = members.find((node) => node.info.name === 'Describe');
+  const describeMember = members.find((node: StubTreeNode) => node.info.name === 'Describe');
   const describeItem = treeProvider.getTreeItem(describeMember);
   check('a member node opens the single viewer tab', describeItem.command?.command === 'ilasmDotnet.openInViewer', describeItem.command?.command);
 
   await vscode.commands.executeCommand(describeItem.command.command, ...describeItem.command.arguments);
   const sessionEditor = await waitFor(
-    () => state.editors.find((editor) => editor.document.uri.path === '/ILASM Dotnet' && editor.document.languageId === 'csharp'),
+    () => state.editors.find((editor: StubEditor) => editor.document.uri.path === '/ILASM Dotnet' && editor.document.languageId === 'csharp'),
     30000,
   );
-  check('the tab is the reusable viewer', Boolean(sessionEditor), state.editors.map((editor) => `${editor.document.uri.path}:${editor.document.languageId}`).join(','));
+  check('the tab is the reusable viewer', Boolean(sessionEditor), state.editors.map((editor: StubEditor) => `${editor.document.uri.path}:${editor.document.languageId}`).join(','));
   check(
     'the member node narrows that tab to the member',
     sessionEditor.document.getText().includes('public string Describe') && !sessionEditor.document.getText().includes('public int Add'),
@@ -335,16 +429,16 @@ async function waitFor(predicate, timeoutMs = 15000) {
   );
 
   const nodeLenses = state.codeLensProviders
-    .filter((entry) => entry.selector.scheme === 'ilasm-dotnet')
-    .flatMap((entry) => entry.provider.provideCodeLenses(sessionEditor.document) ?? []);
+    .filter((entry: StubCodeLensEntry) => entry.selector.scheme === 'ilasm-dotnet')
+    .flatMap((entry: StubCodeLensEntry) => entry.provider.provideCodeLenses(sessionEditor.document) ?? []);
   check('the viewer opened from the tree offers the switcher row', nodeLenses.length === 5, String(nodeLenses.length));
   check('the row names the member the node stands for', String(nodeLenses[4]?.command?.title).includes('Describe'), nodeLenses[4]?.command?.title);
-  check('the row marks the C# view as the one that is open', String(nodeLenses[1]?.command?.title).startsWith('●'), nodeLenses.map((lens) => lens.command?.title).join(' | '));
+  check('the row marks the C# view as the one that is open', String(nodeLenses[1]?.command?.title).startsWith('●'), nodeLenses.map((lens: StubCodeLens) => lens.command?.title).join(' | '));
 
   // The source file opens on the left with the caret on the member, so the viewer is read next to the
   // code and the link between them works — the same as opening the viewer from the file itself.
-  const openedSource = state.editors.find((editor) => editor.document.uri.fsPath === fixtureSource);
-  check('the source file of the member opens', Boolean(openedSource), state.editors.map((editor) => editor.document.uri.fsPath).join(','));
+  const openedSource = state.editors.find((editor: StubEditor) => editor.document.uri.fsPath === fixtureSource);
+  check('the source file of the member opens', Boolean(openedSource), state.editors.map((editor: StubEditor) => editor.document.uri.fsPath).join(','));
   check('the source file sits in the first column', openedSource?.viewColumn === vscode.ViewColumn.One, String(openedSource?.viewColumn));
   check('the viewer sits to the right of it', sessionEditor.viewColumn === vscode.ViewColumn.Beside, String(sessionEditor.viewColumn));
   check(
@@ -364,10 +458,10 @@ async function waitFor(predicate, timeoutMs = 15000) {
   // this is what the ASM action of a member does.
   await vscode.commands.executeCommand('ilasmDotnet.showPanelAsm', describeMember);
   const asmFromTree = await waitFor(
-    () => state.editors.find((editor) => editor.document.uri.path === '/ILASM Dotnet' && editor.document.languageId === 'il-asm'),
+    () => state.editors.find((editor: StubEditor) => editor.document.uri.path === '/ILASM Dotnet' && editor.document.languageId === 'il-asm'),
     60000,
   );
-  check('the ASM action of a member shows native code', Boolean(asmFromTree), state.editors.map((editor) => `${editor.document.uri.path}:${editor.document.languageId}`).join(','));
+  check('the ASM action of a member shows native code', Boolean(asmFromTree), state.editors.map((editor: StubEditor) => `${editor.document.uri.path}:${editor.document.languageId}`).join(','));
   check(
     'the ASM action keeps the member in scope',
     asmFromTree.document.getText().includes('SampleLib.Calculator:Describe') ||
@@ -386,7 +480,7 @@ async function waitFor(predicate, timeoutMs = 15000) {
   const typeAsm = await waitFor(
     () =>
       state.editors.find(
-        (editor) =>
+        (editor: StubEditor) =>
           editor.document.uri.path === '/ILASM Dotnet' &&
           editor.document.languageId === 'il-asm' &&
           // The member view of the previous check is also a listing, so this has to wait for a view
@@ -395,7 +489,7 @@ async function waitFor(predicate, timeoutMs = 15000) {
       ),
     90000,
   );
-  check('the ASM view of a type lists the code of its methods', Boolean(typeAsm), state.editors.map((editor) => `${editor.document.uri.path}:${editor.document.languageId}`).join(','));
+  check('the ASM view of a type lists the code of its methods', Boolean(typeAsm), state.editors.map((editor: StubEditor) => `${editor.document.uri.path}:${editor.document.languageId}`).join(','));
   check(
     'the ASM view of a type holds every method of it',
     typeAsm && (typeAsm.document.getText().match(/Assembly listing for method /g) ?? []).length > 1,
@@ -406,22 +500,22 @@ async function waitFor(predicate, timeoutMs = 15000) {
   // is a note nobody reads, and the listing may be empty because of it.
   await vscode.commands.executeCommand('ilasmDotnet.showPanel', {
     assembly: fixtureAssembly,
-    file: path.join(root, 'scripts', 'smoke.mjs'),
+    file: path.join(root, 'scripts', 'smoke.mts'),
   });
   const explained = await waitFor(
-    () => state.editors.find((editor) => editor.document.uri.path === '/ILASM Dotnet' && editor.document.getText().includes('Nothing in')),
+    () => state.editors.find((editor: StubEditor) => editor.document.uri.path === '/ILASM Dotnet' && editor.document.getText().includes('Nothing in')),
     30000,
   );
-  check('a view with nothing to show explains itself', Boolean(explained), state.editors.map((editor) => editor.document.getText().slice(0, 60)).join(' | '));
+  check('a view with nothing to show explains itself', Boolean(explained), state.editors.map((editor: StubEditor) => editor.document.getText().slice(0, 60)).join(' | '));
   check(
     'the notes of the engine reach the status bar',
-    state.statusBarItems.some((item) => item.text.startsWith('$(warning)')),
-    state.statusBarItems.map((item) => item.text).join(' | '),
+    state.statusBarItems.some((item: StubStatusBarItem) => item.text.startsWith('$(warning)')),
+    state.statusBarItems.map((item: StubStatusBarItem) => item.text).join(' | '),
   );
 
   // The C# of what the tab shows can be copied without switching to that view first.
   await vscode.commands.executeCommand('ilasmDotnet.showPanel', { assembly: fixtureAssembly, file: fixtureSource });
-  await waitFor(() => (/public int Add/.test(state.editors.find((editor) => editor.document.uri.path === '/ILASM Dotnet')?.document.getText() ?? '') ? true : undefined), 30000);
+  await waitFor(() => (/public int Add/.test(state.editors.find((editor: StubEditor) => editor.document.uri.path === '/ILASM Dotnet')?.document.getText() ?? '') ? true : undefined), 30000);
   state.clipboard = '';
   await vscode.commands.executeCommand('ilasmDotnet.copyCsharp');
   check(
@@ -444,10 +538,10 @@ async function waitFor(predicate, timeoutMs = 15000) {
   // A view that cannot be produced says so instead of leaving the previous text on screen.
   await vscode.commands.executeCommand('ilasmDotnet.openInViewer', { assembly: fixtureAssembly, token: 0x0600ffff, title: 'nowhere' });
   const broken = await waitFor(
-    () => state.editors.find((editor) => editor.document.uri.path === '/ILASM Dotnet' && editor.document.getText().includes('could not read this view')),
+    () => state.editors.find((editor: StubEditor) => editor.document.uri.path === '/ILASM Dotnet' && editor.document.getText().includes('could not read this view')),
     30000,
   );
-  check('a view that cannot be read explains itself', Boolean(broken), state.editors.map((editor) => editor.document.getText().slice(0, 60)).join(' | '));
+  check('a view that cannot be read explains itself', Boolean(broken), state.editors.map((editor: StubEditor) => editor.document.getText().slice(0, 60)).join(' | '));
 
   // A type node names a token, and the tab is asked for that type: a type whose bodies all live in
   // generated types (an async entry point, an iterator) has no code in the file index of its file.
@@ -458,10 +552,10 @@ async function waitFor(predicate, timeoutMs = 15000) {
     isType: true,
   });
   const typeTab = await waitFor(
-    () => state.editors.find((editor) => editor.document.uri.path === '/ILASM Dotnet' && editor.document.getText().includes('class Calculator')),
+    () => state.editors.find((editor: StubEditor) => editor.document.uri.path === '/ILASM Dotnet' && editor.document.getText().includes('class Calculator')),
     30000,
   );
-  check('a type node opens the code of that type', Boolean(typeTab), state.editors.map((editor) => editor.document.uri.path).join(','));
+  check('a type node opens the code of that type', Boolean(typeTab), state.editors.map((editor: StubEditor) => editor.document.uri.path).join(','));
 
   // An assembly without a PDB has no file to name, and the member still has to open, alone.
   const strippedDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'ilasm-dotnet-stripped-'));
@@ -475,25 +569,25 @@ async function waitFor(predicate, timeoutMs = 15000) {
     isType: true,
   });
   const strippedTab = await waitFor(
-    () => state.editors.find((editor) => editor.document.uri.path === '/ILASM Dotnet' && editor.document.getText().includes('class Calculator')),
+    () => state.editors.find((editor: StubEditor) => editor.document.uri.path === '/ILASM Dotnet' && editor.document.getText().includes('class Calculator')),
     30000,
   );
-  check('a type of an assembly without a PDB opens as well', Boolean(strippedTab), state.editors.map((editor) => editor.document.uri.path).join(','));
+  check('a type of an assembly without a PDB opens as well', Boolean(strippedTab), state.editors.map((editor: StubEditor) => editor.document.uri.path).join(','));
   check(
     'the tab names no file it does not have',
-    !state.statusBarItems.some((item) => item.text.includes(' ·  · ')),
-    state.statusBarItems.map((item) => item.text).join(' | '),
+    !state.statusBarItems.some((item: StubStatusBarItem) => item.text.includes(' ·  · ')),
+    state.statusBarItems.map((item: StubStatusBarItem) => item.text).join(' | '),
   );
   fs.rmSync(strippedDirectory, { recursive: true, force: true });
 
   // Opening the viewer from a source file is the separate-panes route: the IL and C# views of the
   // type declared in that file open side by side.
-  const typeSourceEditor = state.editors.find((editor) => editor.document.uri.fsPath === fixtureSource);
+  const typeSourceEditor = state.editors.find((editor: StubEditor) => editor.document.uri.fsPath === fixtureSource);
   state.activeEditor = typeSourceEditor;
   await vscode.commands.executeCommand('ilasmDotnet.openForFile');
 
-  const ilEditor = state.editors.find((editor) => editor.document.uri.scheme === 'ilasm-dotnet' && editor.document.uri.path.endsWith('.il'));
-  const csharpEditor = state.editors.find((editor) => editor.document.uri.scheme === 'ilasm-dotnet' && editor.document.uri.path.endsWith('.cs'));
+  const ilEditor = state.editors.find((editor: StubEditor) => editor.document.uri.scheme === 'ilasm-dotnet' && editor.document.uri.path.endsWith('.il'));
+  const csharpEditor = state.editors.find((editor: StubEditor) => editor.document.uri.scheme === 'ilasm-dotnet' && editor.document.uri.path.endsWith('.cs'));
 
   check('opening a type creates the IL view', Boolean(ilEditor));
   check('opening a type creates the decompiled C# view', Boolean(csharpEditor));
@@ -510,16 +604,16 @@ async function waitFor(predicate, timeoutMs = 15000) {
 
   // Selection synchronisation is verified on a method view, where every IL block belongs to the
   // member shown in the decompiled C# pane. The caret in the source decides which member that is.
-  const memberSourceEditor = state.editors.find((editor) => editor.document.uri.fsPath === fixtureSource);
+  const memberSourceEditor = state.editors.find((editor: StubEditor) => editor.document.uri.fsPath === fixtureSource);
   state.activeEditor = memberSourceEditor;
   memberSourceEditor.selection = { active: { line: negativeLine, character: 0 } };
   await vscode.commands.executeCommand('ilasmDotnet.openForCurrentLine');
 
   const memberIlEditor = state.editors.find(
-    (editor) => editor.document.uri.path.endsWith('.il') && editor.document.uri.path.includes('Describe'),
+    (editor: StubEditor) => editor.document.uri.path.endsWith('.il') && editor.document.uri.path.includes('Describe'),
   );
   const memberCsEditor = state.editors.find(
-    (editor) => editor.document.uri.path.endsWith('.cs') && editor.document.uri.path.includes('Describe'),
+    (editor: StubEditor) => editor.document.uri.path.endsWith('.cs') && editor.document.uri.path.includes('Describe'),
   );
 
   check('opening a member creates a member scoped IL view', Boolean(memberIlEditor));
@@ -528,7 +622,7 @@ async function waitFor(predicate, timeoutMs = 15000) {
   check('the member view is revealed automatically', (memberIlEditor?.revealed.length ?? 0) > 0);
 
   const memberLines = memberIlEditor.document.getText().split('\n');
-  const mappedInstructionIndex = memberLines.findIndex((line, index) => {
+  const mappedInstructionIndex = memberLines.findIndex((line: string, index: number) => {
     if (!/IL_[0-9A-F]{4}:/.test(line)) {
       return false;
     }
@@ -553,8 +647,8 @@ async function waitFor(predicate, timeoutMs = 15000) {
   check('moving the caret in IL highlights the original source line', [...sourceEditor.decorations.values()].flat().length > 0);
   check('moving the caret in IL scrolls the source to that line', (sourceEditor.revealed.length ?? 0) > 0, '');
 
-  const statusItem = state.statusBarItems.find((item) => item.text.includes('Calculator.cs'));
-  check('the mapping is reported in the status bar', Boolean(statusItem), state.statusBarItems.map((item) => item.text).join('|'));
+  const statusItem = state.statusBarItems.find((item: StubStatusBarItem) => item.text.includes('Calculator.cs'));
+  check('the mapping is reported in the status bar', Boolean(statusItem), state.statusBarItems.map((item: StubStatusBarItem) => item.text).join('|'));
   check('the status bar points at the IL offset', statusItem?.text.includes('IL_'), statusItem?.text);
 
   const provider = state.linkProviders.get('ilasm-dotnet');
@@ -624,13 +718,13 @@ async function waitFor(predicate, timeoutMs = 15000) {
   sourceEditor.selection = { active: { line: negativeLine, character: 0 } };
   await vscode.commands.executeCommand('ilasmDotnet.openForCurrentLine');
 
-  const methodView = state.editors.find((editor) => editor.document.uri.path.endsWith('.il'));
+  const methodView = state.editors.find((editor: StubEditor) => editor.document.uri.path.endsWith('.il'));
   check('openForCurrentLine opens the member that owns the line', methodView?.document.uri.path.includes('Describe'), methodView?.document.uri.path);
   check('openForCurrentLine reveals the matching instructions', (methodView?.revealed.length ?? 0) > 0);
 
   // The reset above produced fresh editor objects, so the current C# pane has to be looked up again.
   const currentCsEditor = state.editors.find(
-    (editor) => editor.document.uri.path.endsWith('.cs') && editor.document.uri.path.includes('Describe'),
+    (editor: StubEditor) => editor.document.uri.path.endsWith('.cs') && editor.document.uri.path.includes('Describe'),
   );
   check('the C# pane was reopened for the current line', Boolean(currentCsEditor));
 
@@ -644,7 +738,7 @@ async function waitFor(predicate, timeoutMs = 15000) {
   state.activeEditor = methodView;
   await vscode.commands.executeCommand('ilasmDotnet.showAsm');
 
-  const asmEditor = state.editors.find((editor) => editor.document.uri.path.endsWith('.asm'));
+  const asmEditor = state.editors.find((editor: StubEditor) => editor.document.uri.path.endsWith('.asm'));
   check('showAsm opens the ASM pane', Boolean(asmEditor));
   check('the ASM pane is scoped to the member', Boolean(asmEditor?.document.uri.path.includes('Describe')), asmEditor?.document.uri.path);
   check('the ASM document gets the il-asm language', asmEditor?.document.languageId === 'il-asm', asmEditor?.document.languageId);
@@ -657,7 +751,7 @@ async function waitFor(predicate, timeoutMs = 15000) {
   check('the ASM pane was revealed', (asmEditor?.revealed.length ?? 0) > 0);
 
   // Linking by method token: the caret in one pane lights up the others.
-  const asmInstructionLine = asmText.split('\n').findIndex((line) => /^ {2,}[a-z]/.test(line));
+  const asmInstructionLine = asmText.split('\n').findIndex((line: string) => /^ {2,}[a-z]/.test(line));
   check('the ASM pane has an instruction line to place the caret on', asmInstructionLine > 0, String(asmInstructionLine));
 
   if (asmEditor && asmInstructionLine > 0) {
@@ -673,7 +767,7 @@ async function waitFor(predicate, timeoutMs = 15000) {
     const ilInstructionLine = methodView.document
       .getText()
       .split('\n')
-      .findIndex((line) => /^IL_[0-9A-F]{4}:/.test(line.trimStart()));
+      .findIndex((line: string) => /^IL_[0-9A-F]{4}:/.test(line.trimStart()));
     check('the IL pane has an instruction to place the caret on', ilInstructionLine > 0, String(ilInstructionLine));
 
     methodView.selection = { active: { line: ilInstructionLine, character: 0 } };
@@ -693,7 +787,7 @@ async function waitFor(predicate, timeoutMs = 15000) {
 
   check('no webview is used any more', state.webviewPanels.length === 0, String(state.webviewPanels.length));
 
-  const viewerEditors = state.editors.filter((editor) => editor.document.uri.scheme === 'ilasm-dotnet');
+  const viewerEditors = state.editors.filter((editor: StubEditor) => editor.document.uri.scheme === 'ilasm-dotnet');
   check('showPanel opens exactly one native editor', viewerEditors.length === 1, String(viewerEditors.length));
 
   const viewerEditor = viewerEditors[0];
@@ -701,7 +795,7 @@ async function waitFor(predicate, timeoutMs = 15000) {
 
   // The viewer belongs next to the source file, not on top of it.
   check('the viewer opens beside the source file', viewerEditor?.viewColumn === vscode.ViewColumn.Beside, String(viewerEditor?.viewColumn));
-  check('the source editor stays open', state.editors.some((editor) => editor.document.uri.fsPath === fixtureSource));
+  check('the source editor stays open', state.editors.some((editor: StubEditor) => editor.document.uri.fsPath === fixtureSource));
   check('the tab is named for the viewer, not for the file', viewerUri?.endsWith('/ILASM Dotnet'), viewerEditor?.document.uri.path);
   check('the viewer document uses the il language', viewerEditor?.document.languageId === 'il', viewerEditor?.document.languageId);
 
@@ -715,7 +809,7 @@ async function waitFor(predicate, timeoutMs = 15000) {
   check('the view holds every method of the type', (viewerText().match(/IL_0000:/g) ?? []).length >= 3, String((viewerText().match(/IL_0000:/g) ?? []).length));
 
   // The clickable row above the code replaces the dropdown.
-  const lensProvider = state.codeLensProviders.find((entry) => entry.selector.scheme === 'ilasm-dotnet');
+  const lensProvider = state.codeLensProviders.find((entry: StubCodeLensEntry) => entry.selector.scheme === 'ilasm-dotnet');
   check('a code lens provider is registered for the viewer', Boolean(lensProvider), String(state.codeLensProviders.length));
 
   const lenses = lensProvider ? lensProvider.provider.provideCodeLenses(viewerEditor.document) : [];
@@ -761,7 +855,7 @@ async function waitFor(predicate, timeoutMs = 15000) {
   check('switching back to IL restores the language', viewerEditor.document.languageId === 'il', viewerEditor.document.languageId);
 
   // The scope picker narrows the view, and reopening the file keeps that choice.
-  state.quickPickResult = (items) => items.find((item) => String(item.label).includes('Add()'));
+  state.quickPickResult = (items: StubQuickPickItem[]) => items.find((item: StubQuickPickItem) => String(item.label).includes('Add()'));
   await vscode.commands.executeCommand('ilasmDotnet.selectScope');
   await waitFor(() => !viewerText().includes('Describe'), 30000);
   check('the scope picker narrows the view to one member', !viewerText().includes('Describe'), viewerText().slice(0, 80));
@@ -774,7 +868,7 @@ async function waitFor(predicate, timeoutMs = 15000) {
   await vscode.commands.executeCommand('ilasmDotnet.showPanel');
   await waitFor(() => viewerEditor.document.languageId === 'il' && viewerText().includes('Describe'), 30000);
   check('reopening the file starts from the whole file again', viewerText().includes('Describe'), viewerText().slice(0, 80));
-  check('reopening still uses one tab', state.editors.filter((editor) => editor.document.uri.scheme === 'ilasm-dotnet').length === 1);
+  check('reopening still uses one tab', state.editors.filter((editor: StubEditor) => editor.document.uri.scheme === 'ilasm-dotnet').length === 1);
 
   // Switching the view or the scope must not move the tab into another column.
   const columnAfterSwitching = viewerEditor.viewColumn;
@@ -791,21 +885,21 @@ async function waitFor(predicate, timeoutMs = 15000) {
   const viewerLinks = await state.linkProviders.get('ilasm-dotnet').provideDocumentLinks(viewerEditor.document);
   check('sequence point links work in the native tab', viewerLinks.length > 3, String(viewerLinks.length));
 
-  const viewerStatusItem = state.statusBarItems.find((item) => item.command === 'ilasmDotnet.switchOption');
+  const viewerStatusItem = state.statusBarItems.find((item: StubStatusBarItem) => item.command === 'ilasmDotnet.switchOption');
   check('the status bar entry describes the current view', Boolean(viewerStatusItem?.text.includes('Calculator.cs')), String(viewerStatusItem?.text));
   check('the status bar entry opens the switcher', viewerStatusItem?.command === 'ilasmDotnet.switchOption', String(viewerStatusItem?.command));
 
   // A viewer must not be editable, otherwise a stray keystroke would fight the refresh.
-  const editApplied = await viewerEditor.edit((builder) => builder.insert({ line: 0, character: 0 }, 'x'));
+  const editApplied = await viewerEditor.edit((builder: StubEditorEdit) => builder.insert({ line: 0, character: 0 }, 'x'));
   check('the viewer document is read only', editApplied === false, String(editApplied));
 
   // The status bar switcher offers both dimensions in one list.
-  state.quickPickResult = (items) => items.find((item) => String(item.label).includes('Native ASM'));
+  state.quickPickResult = (items: StubQuickPickItem[]) => items.find((item: StubQuickPickItem) => String(item.label).includes('Native ASM'));
   await vscode.commands.executeCommand('ilasmDotnet.switchOption');
   await waitFor(() => viewerEditor.document.languageId === 'il-asm', 60000);
   check('the switcher can change the view', viewerEditor.document.languageId === 'il-asm', viewerEditor.document.languageId);
 
-  state.quickPickResult = (items) => items.find((item) => String(item.label).includes('Describe()'));
+  state.quickPickResult = (items: StubQuickPickItem[]) => items.find((item: StubQuickPickItem) => String(item.label).includes('Describe()'));
   await vscode.commands.executeCommand('ilasmDotnet.switchOption');
   await waitFor(() => viewerText().includes('Describe'), 60000);
   check('the switcher can change the scope', viewerText().includes('Describe'), viewerText().slice(0, 60));
@@ -819,7 +913,7 @@ async function waitFor(predicate, timeoutMs = 15000) {
     await vscode.commands.executeCommand('ilasmDotnet.selectKind', 'asm');
 
     const imageViewer = await waitFor(() => {
-      const editor = state.editors.find((candidate) => candidate.document.uri.path === '/ILASM Dotnet');
+      const editor = state.editors.find((candidate: StubEditor) => candidate.document.uri.path === '/ILASM Dotnet');
       return editor && editor.document.getText().includes('(read from the image)') ? editor : undefined;
     }, 120000);
 
@@ -827,7 +921,7 @@ async function waitFor(predicate, timeoutMs = 15000) {
     const imageText = imageViewer ? imageViewer.document.getText() : '';
     check('the image listing names the target it was built for', imageText.includes('ReadyToRun x64 code'), imageText.split('\n')[1]);
     check('the image listing holds native instructions', /\bpush\b|\bmov\b/.test(imageText), '');
-    check('the image listing names the IL instruction behind an instruction', /; IL_[0-9a-f]{4}/.test(imageText), imageText.split('\n').find((line) => line.includes('; IL_')) ?? '');
+    check('the image listing names the IL instruction behind an instruction', /; IL_[0-9a-f]{4}/.test(imageText), imageText.split('\n').find((line: string) => line.includes('; IL_')) ?? '');
     check('the image listing is in the il-asm language', imageViewer?.document.languageId === 'il-asm', imageViewer?.document.languageId);
 
     // The setting has to be able to bring the JIT back, which is what the other assemblies use.
@@ -835,7 +929,7 @@ async function waitFor(predicate, timeoutMs = 15000) {
     await vscode.commands.executeCommand('ilasmDotnet.selectKind', 'il');
     await vscode.commands.executeCommand('ilasmDotnet.selectKind', 'asm');
     const jitViewer = await waitFor(() => {
-      const editor = state.editors.find((candidate) => candidate.document.uri.path === '/ILASM Dotnet');
+      const editor = state.editors.find((candidate: StubEditor) => candidate.document.uri.path === '/ILASM Dotnet');
       return editor && editor.document.getText().includes('Assembly listing for method') ? editor : undefined;
     }, 120000);
 
@@ -848,13 +942,13 @@ async function waitFor(predicate, timeoutMs = 15000) {
   await vscode.commands.executeCommand('ilasmDotnet.showPanel', { assembly: fixtureAssembly, file: fixtureSource });
   state.activeEditor = sourceEditor;
   await vscode.commands.executeCommand('ilasmDotnet.roundTripIl');
-  check('the round-trip shows progress', state.progressTitles.some((title) => title.includes('ilasm')), state.progressTitles.join('|'));
+  check('the round-trip shows progress', state.progressTitles.some((title: string) => title.includes('ilasm')), state.progressTitles.join('|'));
   check(
     'the round-trip reports that nothing was lost',
-    state.informationMessages.some((message) => message.includes('without differences')),
+    state.informationMessages.some((message: string) => message.includes('without differences')),
     state.informationMessages.at(-1),
   );
-  const roundTripListing = state.editors.find((editor) => editor.document.uri.fsPath?.endsWith('.il'));
+  const roundTripListing = state.editors.find((editor: StubEditor) => editor.document.uri.fsPath?.endsWith('.il'));
   check('the round-trip opens the generated listing', Boolean(roundTripListing), roundTripListing?.document.uri.fsPath);
   check('the generated listing holds the whole assembly', roundTripListing?.document.getText().includes('.assembly SampleLib') === true, '');
   check('the generated listing is a file on disk', roundTripListing?.document.uri.scheme === 'file', roundTripListing?.document.uri.scheme);
@@ -863,7 +957,7 @@ async function waitFor(predicate, timeoutMs = 15000) {
   await vscode.commands.executeCommand('ilasmDotnet.roundTripIl', { assembly: fixtureAssembly });
   check(
     'the command accepts the assembly the tree passes',
-    state.informationMessages.filter((message) => message.includes('without differences')).length >= 2,
+    state.informationMessages.filter((message: string) => message.includes('without differences')).length >= 2,
     state.informationMessages.at(-1),
   );
 
@@ -876,8 +970,8 @@ async function waitFor(predicate, timeoutMs = 15000) {
   check('the active editor is the fixture source', state.activeEditor?.document.uri.fsPath === fixtureSource, state.activeEditor?.document.uri.fsPath);
 
   const rootsWithFile = await treeProvider.getChildren();
-  check('the tree shows a current-file section first', rootsWithFile[0]?.kind === 'currentfile', rootsWithFile.map((node) => node.kind).join(','));
-  check('the tree still lists the project assembly', rootsWithFile.some((node) => node.kind === 'assembly'), rootsWithFile.map((node) => node.kind).join(','));
+  check('the tree shows a current-file section first', rootsWithFile[0]?.kind === 'currentfile', rootsWithFile.map((node: StubTreeNode) => node.kind).join(','));
+  check('the tree still lists the project assembly', rootsWithFile.some((node: StubTreeNode) => node.kind === 'assembly'), rootsWithFile.map((node: StubTreeNode) => node.kind).join(','));
 
   const currentFileNode = rootsWithFile[0];
   const currentFileItem = currentFileNode ? treeProvider.getTreeItem(currentFileNode) : undefined;
@@ -886,10 +980,10 @@ async function waitFor(predicate, timeoutMs = 15000) {
   check('the current-file node reports how much is declared there', Boolean(currentFileItem?.description?.includes('member')), String(currentFileItem?.description));
 
   const fileTypes = await treeProvider.getChildren(currentFileNode);
-  check('the section lists the type declared in the file', fileTypes.length === 1 && fileTypes[0].info.fullName === 'SampleLib.Calculator', fileTypes.map((node) => node.info.fullName).join(','));
+  check('the section lists the type declared in the file', fileTypes.length === 1 && fileTypes[0].info.fullName === 'SampleLib.Calculator', fileTypes.map((node: StubTreeNode) => node.info.fullName).join(','));
 
   const fileMembers = await treeProvider.getChildren(fileTypes[0]);
-  const fileMemberNames = fileMembers.map((node) => node.info.name);
+  const fileMemberNames = fileMembers.map((node: StubTreeNode) => node.info.name);
   check('the section lists the members written in this file', fileMemberNames.includes('Add') && fileMemberNames.includes('Describe'), fileMemberNames.join(','));
   check('the section does not list bodies from other files', !fileMemberNames.includes('MoveNext'), fileMemberNames.join(','));
   check('the section lists the property accessor of the file', fileMemberNames.includes('get_Count'), fileMemberNames.join(','));
@@ -908,7 +1002,7 @@ async function waitFor(predicate, timeoutMs = 15000) {
   }
 
   const rootsWithoutFile = await treeProvider.getChildren();
-  check('the section disappears when the active editor is not a source file', rootsWithoutFile.every((node) => node.kind !== 'currentfile'), rootsWithoutFile.map((node) => node.kind).join(','));
+  check('the section disappears when the active editor is not a source file', rootsWithoutFile.every((node: StubTreeNode) => node.kind !== 'currentfile'), rootsWithoutFile.map((node: StubTreeNode) => node.kind).join(','));
 
   // Saving a source file refreshes the tree, so a fresh build is picked up.
   let treeRefreshes = 0;
@@ -933,7 +1027,7 @@ async function waitFor(predicate, timeoutMs = 15000) {
   );
 
   // The settings checks read the whole-file view, whatever scope the picker selected before.
-  state.quickPickResult = (items) => items.find((item) => String(item.label).includes('Entire file'));
+  state.quickPickResult = (items: StubQuickPickItem[]) => items.find((item: StubQuickPickItem) => String(item.label).includes('Entire file'));
   await vscode.commands.executeCommand('ilasmDotnet.selectScope');
   await waitFor(() => viewerText().includes('public string Describe'), 60000);
 
@@ -953,7 +1047,7 @@ async function waitFor(predicate, timeoutMs = 15000) {
   // document has to be read again without reopening it.
   state.config['ilasmDotnet.includeCompilerGenerated'] = false;
   for (const listener of state.configListeners) {
-    listener({ affectsConfiguration: (section) => section === 'ilasmDotnet' });
+    listener({ affectsConfiguration: (section: string) => section === 'ilasmDotnet' });
   }
 
   await waitFor(() => viewerText() === beforeSave, 60000);
@@ -964,7 +1058,7 @@ async function waitFor(predicate, timeoutMs = 15000) {
   );
 
   // An accessor is listed under the property it belongs to and its C# is that property.
-  state.quickPickResult = (items) => items.find((item) => String(item.label).includes('Count (get)'));
+  state.quickPickResult = (items: StubQuickPickItem[]) => items.find((item: StubQuickPickItem) => String(item.label).includes('Count (get)'));
   await vscode.commands.executeCommand('ilasmDotnet.selectScope');
   const accessorView = await waitFor(() => (/public int Count =>\s*_history\.Count;/.test(viewerText()) ? viewerText() : undefined), 60000);
   check('the scope picker lists an accessor under its property', Boolean(accessorView), viewerText().slice(0, 120));
@@ -981,7 +1075,7 @@ async function waitFor(predicate, timeoutMs = 15000) {
   check('the accessor scope keeps the IL of the accessor itself', Boolean(accessorIl), viewerText().slice(0, 200));
   check('the IL pane shows the accessor, not the property', !viewerText().includes('public int Count'), viewerText().slice(0, 200));
 
-  state.quickPickResult = (items) => items.find((item) => String(item.label).includes('Entire file'));
+  state.quickPickResult = (items: StubQuickPickItem[]) => items.find((item: StubQuickPickItem) => String(item.label).includes('Entire file'));
   await vscode.commands.executeCommand('ilasmDotnet.selectScope');
   await waitFor(() => viewerText().includes('Describe'), 30000);
 
@@ -993,7 +1087,7 @@ async function waitFor(predicate, timeoutMs = 15000) {
   }
 
   const rootsUnbuilt = await treeProvider.getChildren();
-  const unbuilt = rootsUnbuilt.find((node) => node.kind === 'currentfile');
+  const unbuilt = rootsUnbuilt.find((node: StubTreeNode) => node.kind === 'currentfile');
   check('a file without build output explains itself', Boolean(unbuilt?.problem?.includes('build')), String(unbuilt?.problem));
 
   // A live process gives an IL offset for every native instruction, which is the exact link.
@@ -1009,23 +1103,23 @@ async function waitFor(predicate, timeoutMs = 15000) {
     // Give the program a moment to warm its methods up, then attach through the command.
     await new Promise((resolve) => setTimeout(resolve, 4000));
 
-    state.quickPickResult = (items) => items.find((item) => item.pid === liveTarget.pid) ?? items[0];
+    state.quickPickResult = (items: StubQuickPickItem[]) => items.find((item: StubQuickPickItem) => item.pid === liveTarget.pid) ?? items[0];
     await vscode.commands.executeCommand('ilasmDotnet.attachProcess');
 
     check(
       'attaching reports the process it read',
-      state.informationMessages.some((message) => message.includes('attached') && message.includes(`pid ${liveTarget.pid}`)),
+      state.informationMessages.some((message: string) => message.includes('attached') && message.includes(`pid ${liveTarget.pid}`)),
       state.informationMessages.at(-1),
     );
-    check('attaching shows progress', state.progressTitles.some((title) => title.includes('reading process')), state.progressTitles.join('|'));
-    check('the status bar mentions the live process', state.statusBarItems.some((item) => /live \d+/.test(item.text)), state.statusBarItems.map((item) => item.text).join('|'));
+    check('attaching shows progress', state.progressTitles.some((title: string) => title.includes('reading process')), state.progressTitles.join('|'));
+    check('the status bar mentions the live process', state.statusBarItems.some((item: StubStatusBarItem) => /live \d+/.test(item.text)), state.statusBarItems.map((item: StubStatusBarItem) => item.text).join('|'));
 
     // The assembly pane has to switch to the live route.
     await vscode.commands.executeCommand('ilasmDotnet.showPanel', { assembly: liveAssembly, file: liveSource });
     await vscode.commands.executeCommand('ilasmDotnet.selectKind', 'asm');
 
     const liveViewer = await waitFor(() => {
-      const editor = state.editors.find((candidate) => candidate.document.uri.path === '/ILASM Dotnet');
+      const editor = state.editors.find((candidate: StubEditor) => candidate.document.uri.path === '/ILASM Dotnet');
       return editor && editor.document.getText().includes('Native code of') ? editor : undefined;
     }, 90000);
 
@@ -1040,7 +1134,7 @@ async function waitFor(predicate, timeoutMs = 15000) {
     const liveSourceEditor = await vscode.window.showTextDocument(liveSourceDocument, { viewColumn: vscode.ViewColumn.One });
     liveSourceEditor.decorations.clear();
 
-    const annotatedLine = liveText.split('\n').findIndex((line) => /; IL_[0-9A-Fa-f]{4}/.test(line));
+    const annotatedLine = liveText.split('\n').findIndex((line: string) => /; IL_[0-9A-Fa-f]{4}/.test(line));
     check('the live listing has an annotated instruction to place the caret on', annotatedLine > 0, String(annotatedLine));
 
     liveViewer.selection = { active: { line: annotatedLine, character: 0 } };
@@ -1052,7 +1146,7 @@ async function waitFor(predicate, timeoutMs = 15000) {
 
     // Detaching goes back to reading the assembly from the JIT.
     await vscode.commands.executeCommand('ilasmDotnet.detachProcess');
-    check('detaching is reported', state.informationMessages.some((message) => message.includes('detached')), state.informationMessages.at(-1));
+    check('detaching is reported', state.informationMessages.some((message: string) => message.includes('detached')), state.informationMessages.at(-1));
   } finally {
     try {
       liveTarget.kill('SIGKILL');
@@ -1073,13 +1167,13 @@ async function waitFor(predicate, timeoutMs = 15000) {
 
   check(
     'a file that is no assembly is reported as one',
-    state.errorMessages.some((message) => message.includes('not a .NET assembly')),
+    state.errorMessages.some((message: string) => message.includes('not a .NET assembly')),
     state.errorMessages.at(-1),
   );
 
   const rootsAfterFailure = await treeProvider.getChildren();
-  const unreadable = rootsAfterFailure.find((node) => node.kind === 'assembly' && node.info.path === notAnImage);
-  check('an unreadable path stays in the tree', Boolean(unreadable), rootsAfterFailure.map((node) => node.info?.path).join(','));
+  const unreadable = rootsAfterFailure.find((node: StubTreeNode) => node.kind === 'assembly' && node.info.path === notAnImage);
+  check('an unreadable path stays in the tree', Boolean(unreadable), rootsAfterFailure.map((node: StubTreeNode) => node.info?.path).join(','));
   check('the node carries the reason it could not be read', /not a \.NET assembly/.test(unreadable?.problem ?? ''), unreadable?.problem);
 
   const unreadableItem = treeProvider.getTreeItem(unreadable);
@@ -1092,12 +1186,12 @@ async function waitFor(predicate, timeoutMs = 15000) {
   const published = publishNativeImage();
   if (published) {
     state.openDialogResult = [vscode.Uri.file(nativeImageFile)];
-    state.quickPickResult = (items) => items.find((item) => item.label === 'AotTarget.Target.Sum') ?? items[0];
+    state.quickPickResult = (items: StubQuickPickItem[]) => items.find((item: StubQuickPickItem) => item.label === 'AotTarget.Target.Sum') ?? items[0];
 
     await vscode.commands.executeCommand('ilasmDotnet.openAssembly');
 
     const nativeItem = await waitFor(() => {
-      const editor = state.editors.find((candidate) => candidate.document.uri.path === '/ILASM Dotnet');
+      const editor = state.editors.find((candidate: StubEditor) => candidate.document.uri.path === '/ILASM Dotnet');
       return editor && editor.document.getText().includes('AotTarget.Target.Sum') ? editor : undefined;
     }, 30000);
 
@@ -1107,8 +1201,8 @@ async function waitFor(predicate, timeoutMs = 15000) {
     check('the native listing names the debug file it read', nativeText.includes('AotTarget.dbg'), nativeText.split('\n')[1]);
     check('the native listing is the asm language', nativeItem?.document.languageId === 'il-asm', nativeItem?.document.languageId);
 
-    const nativeSource = state.editors.find((editor) => editor.document.uri.fsPath === aotSource);
-    check('the source file of the method opens beside it', Boolean(nativeSource), state.editors.map((editor) => editor.document.uri.fsPath).join(','));
+    const nativeSource = state.editors.find((editor: StubEditor) => editor.document.uri.fsPath === aotSource);
+    check('the source file of the method opens beside it', Boolean(nativeSource), state.editors.map((editor: StubEditor) => editor.document.uri.fsPath).join(','));
     check(
       'the caret of the source file is on the method',
       (nativeSource?.selection?.active?.line ?? -1) + 1 === 13,
@@ -1116,25 +1210,27 @@ async function waitFor(predicate, timeoutMs = 15000) {
     );
     check(
       'the status bar names the native view and the method it shows',
-      state.statusBarItems.some((item) => /Native ASM · AotTarget\.Target\.Sum/.test(item.text)),
-      state.statusBarItems.map((item) => item.text).join(' | '),
+      state.statusBarItems.some((item: StubStatusBarItem) => /Native ASM · AotTarget\.Target\.Sum/.test(item.text)),
+      state.statusBarItems.map((item: StubStatusBarItem) => item.text).join(' | '),
     );
 
     // The row above the code offers one view, not four: there is no IL and no C# in this image.
     const nativeLenses =
       state.codeLensProviders
-        .find((entry) => entry.selector.scheme === 'ilasm-dotnet')
+        .find((entry: StubCodeLensEntry) => entry.selector.scheme === 'ilasm-dotnet')
         ?.provider.provideCodeLenses(nativeItem.document) ?? [];
-    check('the row of a native image offers only the machine code', nativeLenses.length === 2, nativeLenses.map((lens) => lens.command?.title).join('|'));
+    check('the row of a native image offers only the machine code', nativeLenses.length === 2, nativeLenses.map((lens: StubCodeLens) => lens.command?.title).join('|'));
     check('the row of a native image marks that view active', nativeLenses[0]?.command?.title === '● Native ASM', nativeLenses[0]?.command?.title);
 
     const switched = await vscode.commands.executeCommand('ilasmDotnet.selectKind', 'il');
+    // The refusal is what the checks below read, not the result of the command.
+    void switched;
     check(
       'switching a native image to IL is refused with the reason',
-      state.informationMessages.some((message) => message.includes('no IL')),
+      state.informationMessages.some((message: string) => message.includes('no IL')),
       state.informationMessages.at(-1),
     );
-    const afterRefusal = state.editors.find((editor) => editor.document.uri.path === '/ILASM Dotnet');
+    const afterRefusal = state.editors.find((editor: StubEditor) => editor.document.uri.path === '/ILASM Dotnet');
     check(
       'the refused switch leaves the machine code on screen',
       afterRefusal?.document.getText().includes('AotTarget.Target.Sum') === true && afterRefusal?.document.languageId === 'il-asm',
@@ -1143,25 +1239,25 @@ async function waitFor(predicate, timeoutMs = 15000) {
 
     // The tree lists a native image with its methods instead of hiding it as unreadable.
     const rootsWithNative = await treeProvider.getChildren();
-    const nativeNode = rootsWithNative.find((node) => node.kind === 'nativeimage' && node.info.path === nativeImageFile);
-    check('a native image is a node of the tree', Boolean(nativeNode), rootsWithNative.map((node) => node.info?.path).join(','));
+    const nativeNode = rootsWithNative.find((node: StubTreeNode) => node.kind === 'nativeimage' && node.info.path === nativeImageFile);
+    check('a native image is a node of the tree', Boolean(nativeNode), rootsWithNative.map((node: StubTreeNode) => node.info?.path).join(','));
     check('the node reports the machine of the image', /x86-64/.test(treeProvider.getTreeItem(nativeNode).description ?? ''), String(treeProvider.getTreeItem(nativeNode).description));
 
     const nativeMethods = await treeProvider.getChildren(nativeNode);
     check('the node lists the methods of the image', nativeMethods.length >= 3, String(nativeMethods.length));
-    const sumNode = nativeMethods.find((node) => node.method?.fullName === 'AotTarget.Target.Sum');
-    check('a method node names the method', Boolean(sumNode), nativeMethods.map((node) => node.method?.fullName).join(','));
+    const sumNode = nativeMethods.find((node: StubTreeNode) => node.method?.fullName === 'AotTarget.Target.Sum');
+    check('a method node names the method', Boolean(sumNode), nativeMethods.map((node: StubTreeNode) => node.method?.fullName).join(','));
     const sumItem = treeProvider.getTreeItem(sumNode);
     check('a method node shows the source line it came from', sumItem.description === 'Target.cs:13', String(sumItem.description));
     check('a method node opens the code of it', sumItem.command?.command === 'ilasmDotnet.openInViewer', sumItem.command?.command);
 
     await vscode.commands.executeCommand(sumItem.command.command, ...sumItem.command.arguments);
     const reopened = await waitFor(() => {
-      const editor = state.editors.find((candidate) => candidate.document.uri.path === '/ILASM Dotnet');
+      const editor = state.editors.find((candidate: StubEditor) => candidate.document.uri.path === '/ILASM Dotnet');
       return editor && editor.document.getText().includes('AotTarget.Target.Sum') ? editor : undefined;
     }, 30000);
     check('a method node reopens the machine code of that method', Boolean(reopened));
-    check('the reopening keeps the source file beside it', state.editors.some((editor) => editor.document.uri.fsPath === aotSource));
+    check('the reopening keeps the source file beside it', state.editors.some((editor: StubEditor) => editor.document.uri.fsPath === aotSource));
   } else {
     console.log('  skip the native route checks — the NativeAOT publish failed');
   }
@@ -1170,29 +1266,29 @@ async function waitFor(predicate, timeoutMs = 15000) {
   // executable, and the assembly inside it is what every view of the viewer reads.
   if (publishSingleFile()) {
     state.openDialogResult = [vscode.Uri.file(singleImageFile)];
-    state.quickPickResult = (items) => items.find((item) => item.label === 'LiveTarget.Target') ?? items[0];
+    state.quickPickResult = (items: StubQuickPickItem[]) => items.find((item: StubQuickPickItem) => item.label === 'LiveTarget.Target') ?? items[0];
 
     await vscode.commands.executeCommand('ilasmDotnet.openAssembly');
 
     const singleEditor = await waitFor(() => {
-      const editor = state.editors.find((candidate) => candidate.document.uri.path === '/ILASM Dotnet');
+      const editor = state.editors.find((candidate: StubEditor) => candidate.document.uri.path === '/ILASM Dotnet');
       return editor && editor.document.getText().includes('LiveTarget.Target') ? editor : undefined;
     }, 30000);
 
-    check('a single file application opens in the viewer', Boolean(singleEditor), state.editors.map((editor) => editor.document.uri.path).join(','));
+    check('a single file application opens in the viewer', Boolean(singleEditor), state.editors.map((editor: StubEditor) => editor.document.uri.path).join(','));
     check('the view of a single file application holds IL', singleEditor?.document.getText().includes('.class') === true, singleEditor?.document.getText().slice(0, 60));
     check(
       'the view says the assembly was taken out of the bundle',
-      state.statusBarItems.some((item) => String(item.tooltip).includes('single file application')),
-      state.statusBarItems.map((item) => String(item.tooltip)).join(' | '),
+      state.statusBarItems.some((item: StubStatusBarItem) => String(item.tooltip).includes('single file application')),
+      state.statusBarItems.map((item: StubStatusBarItem) => String(item.tooltip)).join(' | '),
     );
 
-    const singleSource = state.editors.find((editor) => editor.document.uri.fsPath === liveSource);
-    check('the source of a single file application opens beside the view', Boolean(singleSource), state.editors.map((editor) => editor.document.uri.fsPath).join(','));
+    const singleSource = state.editors.find((editor: StubEditor) => editor.document.uri.fsPath === liveSource);
+    check('the source of a single file application opens beside the view', Boolean(singleSource), state.editors.map((editor: StubEditor) => editor.document.uri.fsPath).join(','));
 
     const singleRoots = await treeProvider.getChildren();
-    const singleNode = singleRoots.find((node) => node.kind === 'assembly' && node.info.path === singleImageFile);
-    check('a single file application is a node of the tree', Boolean(singleNode), singleRoots.map((node) => node.info?.path).join(','));
+    const singleNode = singleRoots.find((node: StubTreeNode) => node.kind === 'assembly' && node.info.path === singleImageFile);
+    check('a single file application is a node of the tree', Boolean(singleNode), singleRoots.map((node: StubTreeNode) => node.info?.path).join(','));
     check('the node of a single file application reports its types', (singleNode?.info?.typeCount ?? 0) >= 3, String(singleNode?.info?.typeCount));
     check('the node of a single file application finds its PDB', singleNode?.info?.hasPdb === true, String(singleNode?.info?.hasPdb));
   } else {
@@ -1203,7 +1299,7 @@ async function waitFor(predicate, timeoutMs = 15000) {
   // a command for the current file has to open its machine code instead of failing in every pane of
   // the managed route. This is also what the locator has to prefer: an assembly when there is one,
   // the executable only when there is none.
-  state.findFiles = (pattern) => {
+  state.findFiles = (pattern: StubFindFilesPattern) => {
     const isRelative = pattern !== null && typeof pattern === 'object';
     const base = isRelative ? pattern.base : '';
     const glob = isRelative ? pattern.pattern : String(pattern ?? '');
@@ -1238,7 +1334,7 @@ async function waitFor(predicate, timeoutMs = 15000) {
     await vscode.commands.executeCommand('ilasmDotnet.openForCurrentLine');
 
     const nativeFromEditor = await waitFor(() => {
-      const editor = state.editors.find((candidate) => candidate.document.uri.path === '/ILASM Dotnet');
+      const editor = state.editors.find((candidate: StubEditor) => candidate.document.uri.path === '/ILASM Dotnet');
       return editor && editor.document.getText().includes('AotTarget.Target.Sum') ? editor : undefined;
     }, 30000);
 
@@ -1247,13 +1343,13 @@ async function waitFor(predicate, timeoutMs = 15000) {
     const openedHere = state.editors.slice(editorsBefore);
     check(
       'no pane of the managed route is opened for it',
-      openedHere.every((editor) => editor.document.languageId === 'il-asm'),
-      openedHere.map((editor) => `${editor.document.uri.path}:${editor.document.languageId}`).join(','),
+      openedHere.every((editor: StubEditor) => editor.document.languageId === 'il-asm'),
+      openedHere.map((editor: StubEditor) => `${editor.document.uri.path}:${editor.document.languageId}`).join(','),
     );
     check(
       'no view reports that it could not read the image',
-      !state.editors.some((editor) => editor.document.getText().includes('could not read this view')),
-      state.editors.map((editor) => editor.document.uri.path).join(','),
+      !state.editors.some((editor: StubEditor) => editor.document.getText().includes('could not read this view')),
+      state.editors.map((editor: StubEditor) => editor.document.uri.path).join(','),
     );
 
     // The current-file section of the tree lists what that file was compiled into.
@@ -1265,8 +1361,8 @@ async function waitFor(predicate, timeoutMs = 15000) {
     }
 
     const fileRoots = await treeProvider.getChildren();
-    const fileNode = fileRoots.find((node) => node.kind === 'currentfile' && node.file === aotSource);
-    check('the tree keeps a node for the file of a native image', Boolean(fileNode), fileRoots.map((node) => node.file ?? node.info?.path).join(','));
+    const fileNode = fileRoots.find((node: StubTreeNode) => node.kind === 'currentfile' && node.file === aotSource);
+    check('the tree keeps a node for the file of a native image', Boolean(fileNode), fileRoots.map((node: StubTreeNode) => node.file ?? node.info?.path).join(','));
     const fileMethods = fileNode ? await treeProvider.getChildren(fileNode) : [];
     check('the node of the file lists the methods of the image', fileMethods.length >= 3, String(fileMethods.length));
     check(
@@ -1285,14 +1381,14 @@ async function waitFor(predicate, timeoutMs = 15000) {
   await vscode.commands.executeCommand('ilasmDotnet.openForFile');
 
   const managedFromEditor = await waitFor(() => {
-    const editor = state.editors.find((candidate) => candidate.document.languageId === 'il');
+    const editor = state.editors.find((candidate: StubEditor) => candidate.document.languageId === 'il');
     return editor && editor.document.getText().includes('IL_') ? editor : undefined;
   }, 30000);
   check('a file of an ordinary project still opens its assembly', Boolean(managedFromEditor));
   check(
     'the host executable next to the assembly is not what gets read',
-    state.editors.every((editor) => editor.document.uri.fsPath !== singleImageFile),
-    state.editors.map((editor) => editor.document.uri.fsPath).join(','),
+    state.editors.every((editor: StubEditor) => editor.document.uri.fsPath !== singleImageFile),
+    state.editors.map((editor: StubEditor) => editor.document.uri.fsPath).join(','),
   );
 
   fs.rmSync(scratch, { recursive: true, force: true });
@@ -1302,7 +1398,7 @@ async function waitFor(predicate, timeoutMs = 15000) {
   // assembly is found. An F# project is a project like any other, so the same commands have to work
   // for it, and a save of a `.fs` file has to drop the caches the same way a `.cs` save does.
   if (fs.existsSync(fsAssembly)) {
-    state.findFiles = (pattern) => {
+    state.findFiles = (pattern: StubFindFilesPattern) => {
       const isRelative = pattern !== null && typeof pattern === 'object';
       const base = isRelative ? pattern.base : '';
       const glob = isRelative ? pattern.pattern : String(pattern ?? '');
@@ -1323,22 +1419,22 @@ async function waitFor(predicate, timeoutMs = 15000) {
     fsEditor.selection = { active: { line: 26, character: 0 }, anchor: { line: 26, character: 0 } };
 
     const fsRoots = await treeProvider.getChildren();
-    const fsNode = fsRoots.find((node) => node.kind === 'currentfile');
+    const fsNode = fsRoots.find((node: StubTreeNode) => node.kind === 'currentfile');
     check('the tree follows an F# file to its assembly', Boolean(fsNode) && !fsNode.problem, String(fsNode?.problem ?? fsNode?.file));
     check('the tree attaches the F# file to the assembly of its project', fsNode?.assembly === fsAssembly, String(fsNode?.assembly));
 
     const fsTypes = fsNode ? await treeProvider.getChildren(fsNode) : [];
-    const fsLabels = fsTypes.map((node) => String(treeProvider.getTreeItem(node).label));
-    check('the types declared in an F# file are listed', fsLabels.some((label) => label.endsWith('Catalog')), fsLabels.join(','));
+    const fsLabels = fsTypes.map((node: StubTreeNode) => String(treeProvider.getTreeItem(node).label));
+    check('the types declared in an F# file are listed', fsLabels.some((label: string) => label.endsWith('Catalog')), fsLabels.join(','));
 
     await vscode.commands.executeCommand('ilasmDotnet.openForCurrentLine');
     const fsViewer = await waitFor(() => {
       const editor = state.editors.find(
-        (candidate) => candidate.document.languageId === 'il' && candidate.document.getText().includes('FsTarget.Catalog'),
+        (candidate: StubEditor) => candidate.document.languageId === 'il' && candidate.document.getText().includes('FsTarget.Catalog'),
       );
       return editor || undefined;
     }, 30000);
-    check('a command for an F# file opens the IL of its assembly', Boolean(fsViewer), state.editors.map((editor) => editor.document.languageId).join(','));
+    check('a command for an F# file opens the IL of its assembly', Boolean(fsViewer), state.editors.map((editor: StubEditor) => editor.document.languageId).join(','));
     check(
       'the IL of an F# member links back to the .fs file',
       Boolean(fsViewer) && fsViewer.document.getText().includes('.method'),

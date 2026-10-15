@@ -5,7 +5,7 @@
 ![ILASM Dotnet extension icon](icon.png)
 
 ![Version 1.0.1](https://img.shields.io/badge/version-1.0.1-blue?style=flat-square)
-![VS Code ^1.90.0](https://img.shields.io/badge/VS%20Code-%5E1.90.0-007ACC?style=flat-square&logo=visualstudiocode&logoColor=white)
+![VS Code ^1.105.0](https://img.shields.io/badge/VS%20Code-%5E1.105.0-007ACC?style=flat-square&logo=visualstudiocode&logoColor=white)
 ![.NET net10.0](https://img.shields.io/badge/.NET-net10.0-512BD4?style=flat-square&logo=dotnet&logoColor=white)
 ![MIT License](https://img.shields.io/badge/license-MIT-green?style=flat-square)
 
@@ -29,12 +29,13 @@ with `ilasm` — the assembler ships together with the extension.
 
 **Requirements**
 
-* **VS Code 1.90** or newer.
+* **VS Code 1.105** or newer.
 * **.NET 10 runtime** — the engine is launched via `dotnet` and ships as a
   platform-independent build. A newer runtime will do as well (`RollForward=LatestMajor`),
   an older one will not.
-* Building from source additionally needs **Node.js** and **.NET 10 SDK** — see
-  [Build and run](#-build-and-run).
+* Building from source additionally needs **Node.js 22.18** or newer and the **.NET 10 SDK** — see
+  [Build and run](#-build-and-run). The scripts are TypeScript and Node runs them directly by
+  stripping the types, which is what the version requirement is about.
 
 **First steps.**
 
@@ -492,17 +493,23 @@ will be unavailable — the extension will honestly report that.
 ```bash
 npm test              # 555 checks without a GUI: manifest, mapping, switching, integration, engine
 npm run test:inhost   # 85 checks in a live VS Code extension host (will open a window)
-npm run check         # compile + build:engine + test
+npm run typecheck     # type check of the sources and of the dev scripts
+npm run check         # compile + typecheck + build:engine + test
 npm run package       # build dist/ilasm-dotnet-<version>.vsix
 ```
 
-* `scripts/manifest.test.mjs` — validity of the manifest, menus, grammars, paths, keyboard shortcuts
+The dev scripts are TypeScript, and Node runs them directly by stripping types, so a rebuild step is
+not needed to run a test. The one exception is the in-host test: its source is
+`scripts/inhost/index.ts` and `npm run test:inhost` compiles it to `out/inhost/index.js` first, because
+VS Code loads that file with its own CommonJS loader.
+
+* `scripts/manifest.test.mts` — validity of the manifest, menus, grammars, paths, keyboard shortcuts
   (each one refers to a declared command and is not duplicated in the same context).
-* `scripts/mapping.test.mjs` — unit tests of the pure mapping functions (line boundaries, path normalization, tokens).
-* `scripts/viewsession.test.mjs` — the switching rules: which engine call corresponds to
+* `scripts/mapping.test.mts` — unit tests of the pure mapping functions (line boundaries, path normalization, tokens).
+* `scripts/viewsession.test.mts` — the switching rules: which engine call corresponds to
   a state, how the view and the scope are labelled, what the CodeLens row contains. The module
   `src/viewer/viewSession.ts` deliberately does not depend on VS Code.
-* `scripts/extension.test.mjs` — loads the built extension on a VS Code API stub, starts
+* `scripts/extension.test.mts` — loads the built extension on a VS Code API stub, starts
   a real engine and checks the commands, documents, switching of the view and the scope, highlighting,
   links, the tree (including the node with the reason why a file cannot be read, and the native image
   node with its methods), the current file section, the **live process** (`test/fixtures/LiveTarget` is
@@ -511,7 +518,7 @@ npm run package       # build dist/ilasm-dotnet-<version>.vsix
   (including switching between tabs and the `ilasmDotnet.syncScroll` setting), a click on a tree node (it
   must land in the single tab with the switcher), a round-trip through `ilasm` and both ASM source
   settings.
-* `scripts/smoke.mjs` — an end-to-end check of the engine on the `test/fixtures/SampleLib` fixture
+* `scripts/smoke.mts` — an end-to-end check of the engine on the `test/fixtures/SampleLib` fixture
   (it is built automatically), of the live mapping (`IL_xxxx` of every instruction is compared with the
   IL listing of the same method), of reading code from the R2R images for linux-x64 and linux-arm64 (the
   sizes from the image are compared with the sizes from the live process, and the arm64 listing is
@@ -534,7 +541,7 @@ npm run package       # build dist/ilasm-dotnet-<version>.vsix
   (net10.0) carries a second encoding of the "instruction → IL instruction" map: its ReadyToRun image
   packs the map into bit fields, whereas the `LiveTarget` image (net8.0) writes it as consecutive
   numbers — both forms must be readable.
-* `scripts/inhost/index.js` + `scripts/test-inhost.mjs` — what the stub cannot check:
+* `scripts/inhost/index.ts` + `scripts/test-inhost.mts` — what the stub cannot check:
   a real VS Code is launched in an isolated profile, the language of virtual
   documents is determined, document links are resolved, panels open side by side, the ASM panel gets
   code from a real JIT, a setting change must re-read the open panel, a cursor in the source must
@@ -542,7 +549,7 @@ npm run package       # build dist/ilasm-dotnet-<version>.vsix
   closed must open a single tab with the code of that node, the source on the left with the caret on the
   member and **not** leave an empty column, the ASM icon of a node must show the native code, and attach
   to a process is checked at the end by a jump from an instruction to the exact source line. The script
-  can also check an **installed VSIX**: `node scripts/test-inhost.mjs --vsix dist/ilasm-dotnet-1.0.1.vsix`.
+  can also check an **installed VSIX**: `node scripts/test-inhost.mts --vsix dist/ilasm-dotnet-1.0.1.vsix`.
 
 ## 🔬 How the native ASM is produced
 

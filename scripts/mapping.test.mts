@@ -17,8 +17,10 @@ import {
   spanOf,
   tokensAt,
 } from '../out/test/viewer/mapping.js';
+import type { MapBlock } from '../out/test/engine/protocol.js';
 
-const block = (overrides) => ({
+/** A block of a view, with everything the tests do not care about filled in. */
+const block = (overrides: Partial<MapBlock>): MapBlock => ({
   methodToken: 0,
   ilStart: 0,
   ilEnd: 1,
@@ -115,11 +117,13 @@ test('anchorAt reports the method, the IL instruction and the source of a line',
   ];
 
   const first = anchorAt(blocks, 1);
+  assert.ok(first);
   assert.equal(first.methodToken, 0x06000001);
   assert.equal(first.ilStart, 0);
   assert.deepEqual(first.source, { file: 'a.cs', startLine: 10, endLine: 10 });
 
   const second = anchorAt(blocks, 2);
+  assert.ok(second);
   assert.equal(second.ilStart, 4);
   assert.equal(second.source, undefined);
 
@@ -143,11 +147,13 @@ test('anchorAt prefers the instruction block over the method block that covers i
   ];
 
   const anchor = anchorAt(blocks, 13);
+  assert.ok(anchor);
   assert.equal(anchor.ilStart, 0);
   assert.deepEqual(anchor.source, { file: 'a.cs', startLine: 9, endLine: 9 });
 
   // A line the instructions do not cover still resolves to the method it belongs to.
   const prolog = anchorAt(blocks, 8);
+  assert.ok(prolog);
   assert.equal(prolog.methodToken, 0x06000001);
   assert.equal(prolog.source, undefined);
 });

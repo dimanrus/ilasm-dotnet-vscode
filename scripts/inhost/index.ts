@@ -2,15 +2,15 @@
 // Runs inside a real VS Code extension host (--extensionTestsPath). Verifies what the stubbed
 // integration test cannot: real language detection for the ilasm-dotnet documents, real editor
 // integration, and that the whole path (command -> locator -> engine -> editors) works live.
-const fs = require('fs');
-const path = require('path');
-const { spawn, spawnSync } = require('child_process');
-const vscode = require('vscode');
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { spawn, spawnSync } from 'node:child_process';
+import * as vscode from 'vscode';
 
-const failures = [];
+const failures: string[] = [];
 let total = 0;
 
-function check(name, condition, detail) {
+function check(name: string, condition: boolean, detail?: string): void {
   total++;
   if (condition) {
     console.log(`  ok   ${name}`);
@@ -25,7 +25,7 @@ function check(name, condition, detail) {
  * The fixture sources live in the repository, which is also the workspace when this test runs from
  * a packaged VSIX. Fall back to the extension folder for a development host started without one.
  */
-function resolveFixtureRoot(extensionPath) {
+function resolveFixtureRoot(extensionPath: string): string {
   const folders = (vscode.workspace.workspaceFolders || []).map((folder) => folder.uri.fsPath);
   for (const folder of folders) {
     if (fs.existsSync(path.join(folder, 'test', 'fixtures', 'SampleLib', 'Calculator.cs'))) {
@@ -36,7 +36,7 @@ function resolveFixtureRoot(extensionPath) {
   return extensionPath;
 }
 
-async function waitFor(predicate, timeoutMs = 15000) {
+async function waitFor<T>(predicate: () => T, timeoutMs = 15000): Promise<T | undefined> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
     const value = predicate();
@@ -55,13 +55,13 @@ async function waitFor(predicate, timeoutMs = 15000) {
 /**
  * Kills leftover fixture processes, so an attach cannot pick an instance an earlier run left behind.
  */
-function killLeftoverTargets() {
+function killLeftoverTargets(): void {
   for (const entry of fs.readdirSync('/proc')) {
     if (!/^\d+$/.test(entry)) {
       continue;
     }
 
-    let command;
+    let command: string;
     try {
       command = fs.readFileSync(path.join('/proc', entry, 'cmdline'), 'utf8').replace(/\0/g, ' ');
     } catch {
@@ -79,18 +79,18 @@ function killLeftoverTargets() {
 }
 
 /** Starts the long running fixture and resolves once it reports that its methods ran. */
-function startLiveTarget(targetPath) {
+function startLiveTarget(targetPath: string) {
   const target = spawn('dotnet', [targetPath, '90'], { stdio: ['ignore', 'pipe', 'pipe'] });
 
-  return new Promise((resolve, reject) => {
+  return new Promise<typeof target>((resolve, reject) => {
     let output = '';
     const timer = setTimeout(() => reject(new Error('the live target did not become ready')), 60000);
-    const fail = (error) => {
+    const fail = (error: Error): void => {
       clearTimeout(timer);
       reject(error);
     };
 
-    target.stdout.on('data', (chunk) => {
+    target.stdout.on('data', (chunk: Buffer) => {
       output += String(chunk);
       if (output.includes('ready')) {
         clearTimeout(timer);
@@ -106,7 +106,7 @@ function startLiveTarget(targetPath) {
  * The live route is the only one that reports an IL offset for every native instruction, so this
  * attaches to a real process and walks the whole link inside a real editor.
  */
-async function checkLiveRoute(root) {
+async function checkLiveRoute(root: string): Promise<void> {
   const liveAssembly = path.join(root, 'test', 'fixtures', 'LiveTarget', 'bin', 'Release', 'net8.0', 'LiveTarget.dll');
   const liveSource = path.join(root, 'test', 'fixtures', 'LiveTarget', 'Target.cs');
   check('the live target is built in release', fs.existsSync(liveAssembly), liveAssembly);
@@ -165,7 +165,7 @@ async function checkLiveRoute(root) {
 
     check(
       'a live instruction jumps to the source line it implements',
-      Boolean(landed) && landed.selection.active.line === expectedLine,
+      landed !== undefined && landed.selection.active.line === expectedLine,
       `${landed ? landed.selection.active.line : 'no editor'} vs ${expectedLine}`,
     );
 
@@ -186,7 +186,23 @@ async function checkLiveRoute(root) {
   }
 }
 
-async function run() {
+/**
+ * The round-trip command answers with a plain object rather than with a declared type, so the shape
+ * the checks below read out of it is spelled out once here.
+ */
+interface RoundTripReport {
+  success: boolean;
+  output: string;
+  ilPath: string;
+  ilasmPath: string;
+  roundTripTypes: number;
+  originalTypes: number;
+  roundTripMethods: number;
+  originalMethods: number;
+  differences: unknown[];
+}
+
+async function run(): Promise<void> {
   const extension = vscode.extensions.all.find((candidate) => candidate.packageJSON.name === 'ilasm-dotnet');
   check('the extension is discovered by VS Code', Boolean(extension));
   if (!extension) {
@@ -240,13 +256,22 @@ async function run() {
   check('the IL panel opens', Boolean(ilEditor));
   check('the decompiled C# panel opens', Boolean(csharpEditor));
   check('the IL panel targets the member under the caret', ilEditor ? ilEditor.document.uri.path.includes('Describe') : false, ilEditor && ilEditor.document.uri.path);
-  check('VS Code assigns the il language from the uri', ilEditor && ilEditor.document.languageId === 'il', ilEditor && ilEditor.document.languageId);
-  check('VS Code assigns the csharp language from the uri', csharpEditor && csharpEditor.document.languageId === 'csharp', csharpEditor && csharpEditor.document.languageId);
+  check('VS Code assigns the il language from the uri', ilEditor !== undefined && ilEditor.document.languageId === 'il', ilEditor && ilEditor.document.languageId);
+  check('VS Code assigns the csharp language from the uri', csharpEditor !== undefined && csharpEditor.document.languageId === 'csharp', csharpEditor && csharpEditor.document.languageId);
+
+  if (!ilEditor) {
+    throw new Error('the viewer opened without the IL pane');
+  }
 
   const ilText = ilEditor.document.getText();
   check('the IL document contains instructions', /IL_[0-9A-F]{4}:/.test(ilText));
   check('the IL document contains sequence points', ilText.includes('sequence point'));
   check('the IL document contains the method header', ilText.includes('.method'));
+
+  if (!csharpEditor) {
+    throw new Error('the viewer opened without the C# pane');
+  }
+
   check('the C# document contains the decompiled method', csharpEditor.document.getText().includes('Describe'));
 
   // Document links must resolve to the real file on disk.
@@ -303,7 +328,7 @@ async function run() {
   await vscode.commands.executeCommand('ilasmDotnet.showPanel');
 
   // The session tab is the document without a per-target suffix in its name.
-  const isSessionDocument = (editor) => editor.document.uri.scheme === 'ilasm-dotnet' && editor.document.uri.path === '/ILASM Dotnet';
+  const isSessionDocument = (editor: vscode.TextEditor): boolean => editor.document.uri.scheme === 'ilasm-dotnet' && editor.document.uri.path === '/ILASM Dotnet';
 
   const sessionEditors = await waitFor(() => {
     const found = vscode.window.visibleTextEditors.filter(isSessionDocument);
@@ -327,6 +352,10 @@ async function run() {
   check('VS Code assigns the il language', viewerEditor?.document.languageId === 'il', viewerEditor?.document.languageId);
   check('the viewer holds the whole file IL', /IL_[0-9A-F]{4}:/.test(viewerEditor ? viewerEditor.document.getText() : ''), '');
   check('the viewer text is readable, so native find and copy work', (viewerEditor?.document.getText().split('\n').length ?? 0) > 50, String(viewerEditor?.document.getText().split('\n').length));
+
+  if (!viewerEditor || !sessionEditors) {
+    throw new Error('the native viewer tab did not open');
+  }
 
   // The clickable row is a real CodeLens, which is what replaces the dropdown.
   const lenses = await vscode.commands.executeCommand('vscode.executeCodeLensProvider', viewerEditor.document.uri, 2000);
@@ -414,6 +443,10 @@ async function run() {
   }, 60000);
   check('the whole-file IL view is in the session tab', Boolean(fileIlEditor), viewerEditor.document.languageId);
 
+  if (!fileIlEditor) {
+    throw new Error('the whole-file IL listing did not open');
+  }
+
   const ilLines = fileIlEditor.document.getText().split('\n');
   const describeHeader = ilLines.findIndex((line) => line.includes('Describe ('));
   const describeEnd = ilLines.findIndex((line) => line.includes('end of method Calculator::Describe'));
@@ -453,7 +486,7 @@ async function run() {
   check('diagnostics open a report', Boolean(diagnosticsReport), 'no report appeared');
   check(
     'the report names the runtime and the assembly in view',
-    Boolean(diagnosticsReport) &&
+    diagnosticsReport !== undefined &&
       diagnosticsReport.document.getText().includes('node in the extension host') &&
       diagnosticsReport.document.getText().includes('SampleLib'),
     diagnosticsReport ? diagnosticsReport.document.getText().split('\n')[3] : '',
@@ -463,7 +496,7 @@ async function run() {
   await checkLiveRoute(root);
 
   // Phase 4: the listing has to be real IL, so a real assembler is given the whole assembly.
-  const roundTrip = await vscode.commands.executeCommand('ilasmDotnet.roundTripIl', { assembly: assemblyPath });
+  const roundTrip = await vscode.commands.executeCommand<RoundTripReport>('ilasmDotnet.roundTripIl', { assembly: assemblyPath });
   check('ilasm assembles the whole listing', roundTrip && roundTrip.success === true, roundTrip && roundTrip.output.split('\n').at(-1));
   check('the assembled assembly keeps every type', roundTrip && roundTrip.roundTripTypes === roundTrip.originalTypes, roundTrip && `${roundTrip.roundTripTypes}/${roundTrip.originalTypes}`);
   check('the assembled assembly keeps every method', roundTrip && roundTrip.roundTripMethods === roundTrip.originalMethods, roundTrip && `${roundTrip.roundTripMethods}/${roundTrip.originalMethods}`);
@@ -501,24 +534,24 @@ async function run() {
     60000,
   );
   check('a node of the tree opens the single viewer tab', Boolean(fromTree), vscode.window.visibleTextEditors.map((editor) => `${editor.document.uri.path}:${editor.document.languageId}`).join(','));
-  check('the tab shows the code of the type the node stands for', Boolean(fromTree) && fromTree.document.getText().includes('class Calculator'), '');
+  check('the tab shows the code of the type the node stands for', fromTree !== undefined && fromTree.document.getText().includes('class Calculator'), '');
   check('opening from the tree leaves no empty editor group', vscode.window.tabGroups.all.every((group) => group.tabs.length > 0), JSON.stringify(vscode.window.tabGroups.all.map((group) => [group.viewColumn, group.tabs.map((tab) => tab.label)])));
 
   // Opening from the tree gives the same workplace as opening from the file: the source on the left,
   // the viewer next to it, and the two linked, which is what makes the navigation usable.
   const openedSource = vscode.window.visibleTextEditors.find((editor) => editor.document.uri.fsPath === sourcePath);
   check('the source file of the node opens next to the viewer', Boolean(openedSource), vscode.window.visibleTextEditors.map((editor) => editor.document.uri.fsPath).join(','));
-  check('the source file is in the left column', openedSource && openedSource.viewColumn === vscode.ViewColumn.One, String(openedSource && openedSource.viewColumn));
-  check('the viewer is in the column to its right', fromTree && openedSource && fromTree.viewColumn > openedSource.viewColumn, `${fromTree && fromTree.viewColumn} vs ${openedSource && openedSource.viewColumn}`);
+  check('the source file is in the left column', openedSource !== undefined && openedSource.viewColumn === vscode.ViewColumn.One, String(openedSource && openedSource.viewColumn));
+  check('the viewer is in the column to its right', fromTree !== undefined && openedSource !== undefined && fromTree.viewColumn !== undefined && openedSource.viewColumn !== undefined && fromTree.viewColumn > openedSource.viewColumn, `${fromTree && fromTree.viewColumn} vs ${openedSource && openedSource.viewColumn}`);
   const caretLine = openedSource ? openedSource.selection.active.line : -1;
   check(
     'the caret of the source file is on the code of the node',
-    caretLine > 1 && openedSource.document.lineAt(caretLine).text.trim().length > 0,
+    caretLine > 1 && openedSource !== undefined && openedSource.document.lineAt(caretLine).text.trim().length > 0,
     `${caretLine}: ${openedSource ? openedSource.document.lineAt(Math.max(caretLine, 0)).text.trim() : ''}`,
   );
   check(
     'the source file is scrolled to the caret',
-    Boolean(openedSource) && openedSource.visibleRanges.some((range) => range.start.line <= caretLine && range.end.line >= caretLine),
+    openedSource !== undefined && openedSource.visibleRanges.some((range) => range.start.line <= caretLine && range.end.line >= caretLine),
     openedSource ? openedSource.visibleRanges.map((range) => `${range.start.line}-${range.end.line}`).join(',') : '',
   );
 
@@ -529,7 +562,7 @@ async function run() {
     90000,
   );
   check('the ASM action of a node shows native code', Boolean(asmFromTree), vscode.window.visibleTextEditors.map((editor) => `${editor.document.uri.path}:${editor.document.languageId}`).join(','));
-  check('the ASM listing names the member of that node', Boolean(asmFromTree) && asmFromTree.document.getText().includes('Describe'), asmFromTree ? asmFromTree.document.getText().slice(0, 120) : '');
+  check('the ASM listing names the member of that node', asmFromTree !== undefined && asmFromTree.document.getText().includes('Describe'), asmFromTree ? asmFromTree.document.getText().slice(0, 120) : '');
 
   // A type has no single body, so its native code is every body it declares. Asking for it has to
   // produce that listing rather than fail and leave the previous text on screen.
@@ -580,7 +613,7 @@ async function run() {
  * caret sits in - and it must not end in the panes of the managed route, which have nothing to read
  * and would show the same "not a managed assembly" in every one of them.
  */
-async function checkNativeProject(root) {
+async function checkNativeProject(root: string): Promise<void> {
   const directory = path.join(root, 'test', 'fixtures', 'AotTarget');
   const project = path.join(directory, 'AotTarget.csproj');
   const source = path.join(directory, 'Target.cs');
@@ -642,7 +675,7 @@ async function checkNativeProject(root) {
  * is the work of an F# extension; when the profile running this test has none, the file opens as
  * plain text and only the command side is checked.
  */
-async function checkFsharpProject(root) {
+async function checkFsharpProject(root: string): Promise<void> {
   const directory = path.join(root, 'test', 'fixtures', 'FsTarget');
   const project = path.join(directory, 'FsTarget.fsproj');
   const source = path.join(directory, 'Catalog.fs');
@@ -695,7 +728,7 @@ async function checkFsharpProject(root) {
   check('the C# pane of an F# assembly is a decompilation of its IL', Boolean(csharp), 'no C# pane with the member appeared');
   check(
     'the C# pane of an F# assembly is code rather than a message',
-    Boolean(csharp) && !/could not read this view|not a managed assembly/.test(csharp.document.getText()),
+    csharp !== undefined && !/could not read this view|not a managed assembly/.test(csharp.document.getText()),
     csharp ? csharp.document.getText().split('\n')[0] : '',
   );
 }

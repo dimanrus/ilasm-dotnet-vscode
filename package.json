@@ -50,7 +50,8 @@
     "Visualization"
   ],
   "engines": {
-    "vscode": "^1.90.0"
+    "vscode": "^1.105.0",
+    "node": ">=22.18.0"
   },
   "main": "./out/extension.js",
   "activationEvents": [
@@ -357,23 +358,25 @@
     ]
   },
   "scripts": {
-    "compile": "tsc -p ./ --noEmit && node esbuild.mjs",
-    "watch": "node esbuild.mjs --watch",
-    "typecheck": "tsc -p ./ --noEmit",
-    "build:engine": "dotnet publish engine/IlasmDotnet.Engine/IlasmDotnet.Engine.csproj -c Release -o out/engine -p:UseAppHost=false -p:DebugType=none -p:GenerateDocumentationFile=false && node scripts/copy-ilasm.mjs",
-    "pretest": "npm run compile && tsc src/viewer/mapping.ts src/viewer/viewSession.ts src/engine/protocol.ts --outDir out/test --module commonjs --target es2022 --skipLibCheck",
-    "pretest:inhost": "npm run compile",
-    "test": "node --test scripts/manifest.test.mjs scripts/mapping.test.mjs scripts/viewsession.test.mjs && node scripts/extension.test.mjs && node scripts/smoke.mjs",
-    "check": "npm run compile && npm run build:engine && npm test",
-    "test:inhost": "node scripts/test-inhost.mjs",
-    "package": "npm run compile && npm run build:engine && node -e \"require('node:fs').mkdirSync('dist', { recursive: true })\" && vsce package --out dist/ilasm-dotnet-1.0.1.vsix"
+    "compile": "tsc -p ./ --noEmit && node esbuild.mts",
+    "watch": "node esbuild.mts --watch",
+    "typecheck": "npm run build:tests && tsc -p ./ --noEmit && tsc -p tsconfig.scripts.json",
+    "build:engine": "dotnet publish engine/IlasmDotnet.Engine/IlasmDotnet.Engine.csproj -c Release -o out/engine -p:UseAppHost=false -p:DebugType=none -p:GenerateDocumentationFile=false && node scripts/copy-ilasm.mts",
+    "build:inhost": "tsc --ignoreConfig scripts/inhost/index.ts --outDir out/inhost --module commonjs --target es2022 --skipLibCheck --types node",
+    "build:tests": "tsc --ignoreConfig src/viewer/mapping.ts src/viewer/viewSession.ts src/engine/protocol.ts --outDir out/test --module commonjs --target es2022 --skipLibCheck --declaration",
+    "pretest": "npm run compile && npm run build:tests",
+    "pretest:inhost": "npm run compile && npm run build:inhost",
+    "test": "node --test scripts/manifest.test.mts scripts/mapping.test.mts scripts/viewsession.test.mts && node scripts/extension.test.mts && node scripts/smoke.mts",
+    "test:inhost": "node scripts/test-inhost.mts",
+    "check": "npm run compile && npm run typecheck && npm run build:engine && npm test",
+    "package": "npm run compile && npm run build:engine && node scripts/package.mts"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",
-    "@types/vscode": "^1.90.0",
+    "@types/vscode": "~1.105.0",
     "@vscode/vsce": "^4.0.0",
     "esbuild": "^0.23.0",
-    "typescript": "^5.5.4"
+    "typescript": "^7.0.2"
   },
   "private": true
 }

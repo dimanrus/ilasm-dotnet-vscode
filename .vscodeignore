@@ -7,6 +7,7 @@ engine/**
 scripts/**
 test/**
 out/test/**
+out/inhost/**
 **/*.map
 **/*.ts
 **/*.cs
@@ -15,8 +16,8 @@ out/test/**
 node_modules/**
 .vscodeignore
 .gitignore
-esbuild.mjs
-tsconfig.json
+esbuild.mts
+tsconfig*.json
 package-lock.json
 **/.DS_Store
 

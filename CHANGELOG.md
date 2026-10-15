@@ -1,5 +1,22 @@
 # 📋 Changelog
 
+**English** · [Русский](CHANGELOG.ru.md)
+
+## [Unreleased]
+
+### 🛠️ Tooling
+
+- TypeScript 7 is the compiler, and the dev scripts are TypeScript instead of JavaScript:
+  `esbuild.mts`, `copy-ilasm.mts`, the unit tests, `extension.test.mts`, `smoke.mts`, `test-inhost.mts`
+- Node 22.18 or newer is required for development
+- The screenshots in `images/` are compressed without losing legibility (2.3 MB → 0.7 MB), so the package
+  is smaller
+
+### 🔧 Changed
+
+- The minimum VS Code is **1.105** instead of 1.90
+- The engine log is a log channel now: every line carries its severity
+
 ## [1.0.1] - 2026-10-13
 
 ### 🔍 Discovery

@@ -2,10 +2,25 @@
 
 **Русский** · [English](CHANGELOG.md)
 
-## [Unreleased]
+## [1.1.0] - 2026-11-15
+
+### ✨ Added
+
+- **Runtime async** (C# 15 / .NET 11): у метода, точки ожидания которого обрабатывает сам рантайм, нет
+  конечного автомата, он помечен атрибутом реализации `Async`, а `await` превращается в вызов
+  `AsyncHelpers`. Вид IL и подписи членов пишут этот атрибут так, как его читает `ilasm`, —
+  `cil managed async`, а не сырое `flags(2000)`; высокоуровневый C# восстанавливает `async`/`await`,
+  низкоуровневый показывает получившееся понижение, а round-trip через ilasm сохраняет атрибут.
+  Проверяется новой фикстурой `test/fixtures/RuntimeAsync`.
 
 ### 🛠️ Tooling
 
+- Движок и фикстуры нацелены на **.NET 11**: runtime async в метаданных, отладочная информация
+  ReadyToRun формата 17 и новее (вид записи занимает три бита вместо двух) и `ilasm` 11.0.0. Движок
+  по-прежнему идёт и на более новом рантайме (`RollForward=LatestMajor`)
+- Декомпилятор — **ICSharpCode.Decompiler 11.2.0.10050**, библиотеки диагностики —
+  **Microsoft.Diagnostics.Runtime 4.2.751201** и **Microsoft.Diagnostics.NETCore.Client 0.2.750501**,
+  дизассемблер x64 — **Iced 1.22.0**
 - Компилятор — TypeScript 7, а скрипты разработки написаны на TypeScript вместо JavaScript:
   `esbuild.mts`, `copy-ilasm.mts`, юнит-тесты, `extension.test.mts`, `smoke.mts`, `test-inhost.mts`
 - Для разработки нужен Node 22.18 или новее
@@ -87,9 +102,10 @@
 ### 📌 Notes
 
 - Требуется VS Code 1.90 или новее и **.NET 10 runtime**; более новый рантайм тоже подойдёт
-  (`RollForward=LatestMajor`). Версия VS Code поднята до 1.105 в невыпущенных изменениях выше.
+  (`RollForward=LatestMajor`).
 - Расширение не делает сетевых запросов и не собирает телеметрию: каждый вид считается локально
   поставляемым движком на .NET.
 
+[1.1.0]: https://github.com/dimanrus/ilasm-dotnet-vscode/releases
 [1.0.1]: https://github.com/dimanrus/ilasm-dotnet-vscode/releases
 [1.0.0]: https://github.com/dimanrus/ilasm-dotnet-vscode/releases

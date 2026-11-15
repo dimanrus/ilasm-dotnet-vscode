@@ -2,10 +2,25 @@
 
 **English** · [Русский](CHANGELOG.ru.md)
 
-## [Unreleased]
+## [1.1.0] - 2026-11-15
+
+### ✨ Added
+
+- **Runtime async** (C# 15 / .NET 11): a method whose await points the runtime handles itself carries no
+  state machine and is marked with the `Async` implementation attribute, and an `await` becomes a call to
+  `AsyncHelpers`. The IL view and the member signatures spell the attribute the way `ilasm` accepts it —
+  `cil managed async`, not the raw `flags(2000)` — the high-level C# restores `async`/`await`, the
+  low-level one shows the lowering, and the ilasm round-trip keeps the attribute. Checked by the new
+  `test/fixtures/RuntimeAsync` fixture.
 
 ### 🛠️ Tooling
 
+- The engine and the fixtures target **.NET 11**: runtime async in the metadata, the ReadyToRun debug
+  info of image format 17 and later (the kind of an entry takes three bits instead of two), and `ilasm`
+  11.0.0. The engine still rolls forward to a newer runtime (`RollForward=LatestMajor`)
+- The decompiler is **ICSharpCode.Decompiler 11.2.0.10050**, the diagnostics libraries are
+  **Microsoft.Diagnostics.Runtime 4.2.751201** and **Microsoft.Diagnostics.NETCore.Client 0.2.750501**,
+  the x64 disassembler is **Iced 1.22.0**
 - TypeScript 7 is the compiler, and the dev scripts are TypeScript instead of JavaScript:
   `esbuild.mts`, `copy-ilasm.mts`, the unit tests, `extension.test.mts`, `smoke.mts`, `test-inhost.mts`
 - Node 22.18 or newer is required for development
@@ -91,5 +106,6 @@ First public release.
 - The extension makes no network requests and collects no telemetry — every view is computed locally by
   the bundled .NET engine.
 
+[1.1.0]: https://github.com/dimanrus/ilasm-dotnet-vscode/releases
 [1.0.1]: https://github.com/dimanrus/ilasm-dotnet-vscode/releases
 [1.0.0]: https://github.com/dimanrus/ilasm-dotnet-vscode/releases

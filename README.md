@@ -4,9 +4,9 @@
 
 ![ILASM Dotnet extension icon](icon.png)
 
-![Version 1.0.1](https://img.shields.io/badge/version-1.0.1-blue?style=flat-square)
+![Version 1.1.0](https://img.shields.io/badge/version-1.1.0-blue?style=flat-square)
 ![VS Code ^1.105.0](https://img.shields.io/badge/VS%20Code-%5E1.105.0-007ACC?style=flat-square&logo=visualstudiocode&logoColor=white)
-![.NET net10.0](https://img.shields.io/badge/.NET-net10.0-512BD4?style=flat-square&logo=dotnet&logoColor=white)
+![.NET net11.0](https://img.shields.io/badge/.NET-net11.0-512BD4?style=flat-square&logo=dotnet&logoColor=white)
 ![MIT License](https://img.shields.io/badge/license-MIT-green?style=flat-square)
 
 A viewer of IL/ASM and decompiled C# code for .NET assemblies.
@@ -30,10 +30,10 @@ with `ilasm` — the assembler ships together with the extension.
 **Requirements**
 
 * **VS Code 1.105** or newer.
-* **.NET 10 runtime** — the engine is launched via `dotnet` and ships as a
+* **.NET 11 runtime** — the engine is launched via `dotnet` and ships as a
   platform-independent build. A newer runtime will do as well (`RollForward=LatestMajor`),
   an older one will not.
-* Building from source additionally needs **Node.js 22.18** or newer and the **.NET 10 SDK** — see
+* Building from source additionally needs **Node.js 22.18** or newer and the **.NET 11 SDK** — see
   [Build and run](#-build-and-run). The scripts are TypeScript and Node runs them directly by
   stripping the types, which is what the version requirement is about.
 
@@ -67,6 +67,7 @@ and `ILASM Dotnet: Show Diagnostics` will gather the overall picture.
 - [🚀 NativeAOT: ASM without IL](#-nativeaot-asm-without-il)
 - [🎯 Exact mapping: attach to a live process](#-exact-mapping-attach-to-a-live-process)
 - [🧩 F#, VB and any other .NET language](#-f-vb-and-any-other-net-language)
+- [⚡ Runtime async](#-runtime-async)
 - [🧊 ASM straight from a ReadyToRun image](#-asm-straight-from-a-readytorun-image)
 - [🔁 Assembling IL back: ilasm round-trip](#-assembling-il-back-ilasm-round-trip)
 - [🚧 Limitations](#-limitations)
@@ -104,6 +105,7 @@ the listing on the right, and the cursor in the source highlights what it produc
 | Sequence point annotations right in the IL (`// sequence point: (line 18, col 13) ...`) | ✅ done |
 | Decompilation to C# (ILSpy engine, `ICSharpCode.Decompiler`) | ✅ done |
 | Two kinds of C#: **high level** (as the code is written) and **low level** (what the compiler made of it, together with generated types) | ✅ done |
+| **Runtime async** of .NET 11: a method the runtime suspends itself, without a compiler-generated state machine | ✅ done — IL, both kinds of C#, ASM and the ilasm round-trip |
 | Exact **IL ↔ source line** mapping by PDB | ✅ done |
 | Two-way highlighting **and scrolling** of IL ↔ source file as the cursor moves | ✅ done |
 | Clickable links from sequence points into the source file (`#L18`) | ✅ done |
@@ -132,9 +134,10 @@ version" but by file format.
 
 | What | Support |
 |---|---|
-| IL and decompiled C# | ✅ any managed assembly that the metadata reader understands: .NET Framework 2.0+ (`mscorlib`), .NET Core / .NET 5–10, netstandard, Mono; x86/x64/arm64. Verified on a real `Newtonsoft.Json` `lib/net45` — 511 types, 2754 lines of IL for a type, 1116 lines of C# |
-| C# syntax on the output | ✅ it is defined by the decompiler, not by the target framework: `SetLanguageVersion` is not called, so the default of `ICSharpCode.Decompiler` 11.1.0.9782 applies — `LanguageVersion.Latest` (feature flags of C# 14: `ExtensionMembers`, `FieldKeyword`, `UsePrimaryConstructorSyntaxForNonRecordTypes`, `ParamsCollections`, `RequiredMembers`, `Utf8StringLiterals`…). Records and file-scoped namespaces are restored even from old IL |
-| ASM from the JIT | ⚠️ works if the runtime that runs the engine can load the assembly. This is **not** the runtime of your application: on your machine the engine runs on 10.0.11 (`RollForward=LatestMajor`), and the code comes from its JIT. Loading a net45 assembly worked as well (through facades), but exotic dependencies on Framework-specific APIs may fail to load |
+| IL and decompiled C# | ✅ any managed assembly that the metadata reader understands: .NET Framework 2.0+ (`mscorlib`), .NET Core / .NET 5–11, netstandard, Mono; x86/x64/arm64. Verified on a real `Newtonsoft.Json` `lib/net45` — 511 types, 2754 lines of IL for a type, 1116 lines of C# |
+| Runtime async (.NET 11) | ✅ a method whose await points the runtime handles itself carries the `Async` implementation attribute and no compiler-generated state machine. The IL view spells the attribute the way `ilasm` reads it (`cil managed async`), the high-level C# restores `async`/`await`, the low-level one shows the `AsyncHelpers` calls, and the ilasm round-trip preserves the attribute. See [Runtime async](#-runtime-async) |
+| C# syntax on the output | ✅ it is defined by the decompiler, not by the target framework: `SetLanguageVersion` is not called, so the default of `ICSharpCode.Decompiler` 11.2.0.10050 applies — `LanguageVersion.Latest` (feature flags of C# 15: runtime async, `ExtensionMembers`, `FieldKeyword`, `UsePrimaryConstructorSyntaxForNonRecordTypes`, `ParamsCollections`, `RequiredMembers`, `Utf8StringLiterals`…). Records and file-scoped namespaces are restored even from old IL |
+| ASM from the JIT | ⚠️ works if the runtime that runs the engine can load the assembly. This is **not** the runtime of your application: on your machine the engine runs on 11.0.0 (`RollForward=LatestMajor`), and the code comes from its JIT. Loading a net45 assembly worked as well (through facades), but exotic dependencies on Framework-specific APIs may fail to load |
 | ASM from a ReadyToRun image | ✅ without running the code, x64 and arm64, linux/windows/osx; for an unsupported architecture (for example linux-arm) — an honest note instead of a silent fallback |
 | ASM of a live process (ClrMD) | ⚠️ x64: the Iced decoder is hard-wired to 64 bits |
 | Debug and Release | ✅ the same; a PDB is needed **only** for the file-wide views and for the source ↔ IL mapping. In Release (portable PDB by default since .NET 6) sequence points are rarer, so the nearest annotated line within 25 lines is taken. `DebugType=none` → by type/member everything is still readable, while the file views honestly print `; No debug information is available…`. A Windows "full" PDB is not read at all (only portable is supported) |
@@ -143,15 +146,15 @@ version" but by file format.
 | `PublishAot` from the editor | ✅ a project with `<PublishAot>true</PublishAot>` is read **from the image**, not from the intermediate `bin/**/<Name>.dll` it was built from: the code in them differs, and the second one is not what is executed. If there is no image next to it (it has not been published yet), the dll is taken |
 | `PublishSingleFile` | ✅ readable: the file is a native host with the assembly and a manifest glued to the end, so the assembly inside is unpacked into a temporary directory and everything works as usual after that — IL, both kinds of C#, ASM from the JIT, mapping to lines by the PDB next to the exe. Native pieces (the runtime itself for self-contained) are not unpacked: the metadata does not need them |
 
-Under the hood: `ReflectionDisassembler` and `CSharpDecompiler` from **ICSharpCode.Decompiler 11.1.0.9782**,
+Under the hood: `ReflectionDisassembler` and `CSharpDecompiler` from **ICSharpCode.Decompiler 11.2.0.10050**,
 metadata — `System.Reflection.Metadata`, portable PDB — `PortablePdbInfoProvider` (ILSpy),
-live process — **Microsoft.Diagnostics.Runtime 3.1.512801** + **Microsoft.Diagnostics.NETCore.Client
-0.2.661903**, disassembling — **Iced 1.21.0** (x64) and **Gee.External.Capstone 2.3.0** (arm64),
-assembling the listing back — `ilasm` 10.0.12 from `runtime.*.Microsoft.NETCore.ILAsm`.
+live process — **Microsoft.Diagnostics.Runtime 4.2.751201** + **Microsoft.Diagnostics.NETCore.Client
+0.2.750501**, disassembling — **Iced 1.22.0** (x64) and **Gee.External.Capstone 2.3.0** (arm64),
+assembling the listing back — `ilasm` 11.0.0 from `runtime.*.Microsoft.NETCore.ILAsm`.
 
 ## 🧱 Architecture
 ```text
-VS Code (TypeScript)                       .NET engine (net10.0, JSON-RPC over stdio)
+VS Code (TypeScript)                       .NET engine (net11.0, JSON-RPC over stdio)
 ┌────────────────────────────┐             ┌──────────────────────────────────────────┐
 │ extension.ts               │             │ Program.cs        — call dispatcher      │
 │  ├ IlasmDotnetDocuments    │  view/il    │ Views/IlViewService    — ReflectionDis-  │
@@ -216,7 +219,7 @@ src/                        TypeScript extension
                             outputs, quickPick, sourceLinks
   tree/assemblyTree.ts      tree: current file → types → members, then the project assemblies
   util/log.ts               the "ILASM Dotnet" output channel
-engine/IlasmDotnet.Engine/  the C# engine (net10.0); Program.cs — call dispatcher
+engine/IlasmDotnet.Engine/  the C# engine (net11.0); Program.cs — call dispatcher
   Views/                    building the views: IL, C#, ASM, file, round-trip through ilasm
   Live/                     attach: process snapshot and ASM of the live JIT (ClrMD + Iced)
   ReadyToRun/               code from a ReadyToRun image, including arm64
@@ -227,7 +230,7 @@ engine/IlasmDotnet.Engine/  the C# engine (net10.0); Program.cs — call dispatc
   Rpc/                      JSON-RPC server over stdio
   Model/                    protocol DTOs
 scripts/                    tests and tools: smoke, extension.test, inhost, copy-ilasm, a VS Code stub
-test/fixtures/              fixtures: SampleLib, LiveTarget, AotTarget, FsTarget, Playground, R2RDebug
+test/fixtures/              fixtures: SampleLib, LiveTarget, AotTarget, FsTarget, Playground, R2RDebug, RuntimeAsync
 syntaxes/                   TextMate grammars for il and il-asm
 resources/                  the ilasm-dotnet.svg view icon
 images/                     the screenshots shown in this README
@@ -251,7 +254,7 @@ the project:
       .ctor()
       Name
       Value
-▾ Playground                       1.0.0 · .NETCoreApp,Version=v10.0 · AnyCPU
+▾ Playground                       1.0.0 · .NETCoreApp,Version=v11.0 · AnyCPU
   ▾ Playground.Catalog              class
       …
 ```
@@ -491,7 +494,7 @@ will be unavailable — the extension will honestly report that.
 ## 🧪 Tests
 
 ```bash
-npm test              # 555 checks without a GUI: manifest, mapping, switching, integration, engine
+npm test              # 576 checks without a GUI: manifest, mapping, switching, integration, engine
 npm run test:inhost   # 85 checks in a live VS Code extension host (will open a window)
 npm run typecheck     # type check of the sources and of the dev scripts
 npm run check         # compile + typecheck + build:engine + test
@@ -538,9 +541,12 @@ VS Code loads that file with its own CommonJS loader.
   entry point `async Task<int> Main` whose body the compiler moved into a nested generated type, — a file
   consisting entirely of such bodies must show the code of the type that spawned them, not emptiness,
   and a PDB of a foreign assembly placed next to it must be ignored. The `test/fixtures/R2RDebug` fixture
-  (net10.0) carries a second encoding of the "instruction → IL instruction" map: its ReadyToRun image
+  (net11.0) carries a second encoding of the "instruction → IL instruction" map: its ReadyToRun image
   packs the map into bit fields, whereas the `LiveTarget` image (net8.0) writes it as consecutive
-  numbers — both forms must be readable.
+  numbers — both forms must be readable. The same fixture is what checks the three-bit kind of an entry
+  that version 17 introduced together with runtime async. The `test/fixtures/RuntimeAsync` fixture is
+  compiled with `<Features>runtime-async=on</Features>` and checks that a method the runtime suspends is
+  read like any other, see [Runtime async](#-runtime-async).
 * `scripts/inhost/index.ts` + `scripts/test-inhost.mts` — what the stub cannot check:
   a real VS Code is launched in an isolated profile, the language of virtual
   documents is determined, document links are resolved, panels open side by side, the ASM panel gets
@@ -549,7 +555,7 @@ VS Code loads that file with its own CommonJS loader.
   closed must open a single tab with the code of that node, the source on the left with the caret on the
   member and **not** leave an empty column, the ASM icon of a node must show the native code, and attach
   to a process is checked at the end by a jump from an instruction to the exact source line. The script
-  can also check an **installed VSIX**: `node scripts/test-inhost.mts --vsix dist/ilasm-dotnet-1.0.1.vsix`.
+  can also check an **installed VSIX**: `node scripts/test-inhost.mts --vsix dist/ilasm-dotnet-1.1.0.vsix`.
 
 ## 🔬 How the native ASM is produced
 
@@ -570,11 +576,11 @@ What this gives:
 * real runtime code, not a reconstruction — including folded expressions and inlined code;
 * `FullOpts` with `DOTNET_TieredCompilation=0` (the `ilasmDotnet.asmOptimized` setting, enabled by default), a byte counter and inlining statistics;
 * tier 0 if the setting is turned off;
-* the header shows the runtime and the kind of code: `; FullOpts, 77 bytes of code, runtime 10.0.11`.
+* the header shows the runtime and the kind of code: `; FullOpts, 77 bytes of code, runtime 11.0.0`.
 
 What this route does not give, and this is honestly stated in the panel itself:
 
-* **the ASM → source line mapping**: `DOTNET_JitDisasmWithSource` adds nothing in .NET 10 (verified), so without attach the panel is linked to IL and C# **by method**. As the instruction says, the mapping is provided by the live route, see the next section;
+* **the ASM → source line mapping**: `DOTNET_JitDisasmWithSource` adds nothing in .NET 10 and .NET 11 (verified), so without attach the panel is linked to IL and C# **by method**. As the instruction says, the mapping is provided by the live route, see the next section;
 * **optimization of debug builds**: the `[Debuggable]` attribute forbids optimization, so for a Debug build you will get `MinOpts` — the panel says so directly instead of staying silent;
 * **generic methods**: they are compiled with `object` substituted as the representative, so the code is approximate;
 * **methods the runtime has not compiled yet**: `PrepareMethod` does not compile everything, so the panel reports how many methods were left without native code.
@@ -717,6 +723,31 @@ Verified by the `test/fixtures/FsTarget` fixture (F#): IL and C# per file, mappi
 the JIT listing, and for a ReadyToRun image — the same "instruction → IL instruction" map, compared with
 the runtime instruction by instruction.
 
+## ⚡ Runtime async
+
+.NET 11 (C# 15) can lower an `async` method **into the runtime** instead of a compiler-generated state
+machine: the project opts in with `<Features>runtime-async=on</Features>`, and then
+
+* the method keeps its own body — there is no `<Method>d__N` type to look at;
+* the metadata marks it with the `Async` implementation attribute (`0x2000`);
+* an `await` becomes a call to `System.Runtime.CompilerServices.AsyncHelpers`, the runtime suspends the
+  frame itself and resumes it from the captured context; the method returns the value directly, and the
+  `Task<T>` in its signature is what the runtime wraps it into.
+
+Everything the viewer shows about such a method stays readable:
+
+| View | What it shows |
+|---|---|
+| IL | `cil managed async` — the keyword `ilasm` knows, not the raw `flags(2000)` the disassembler would print; the await is a visible `AsyncHelpers::UnsafeAwaitAwaiter` call |
+| Signatures (tree, headers) | the same `async` word, so a runtime async method is told apart from an ordinary one at a glance |
+| C# (high level) | `async Task<T>` with `await`, rebuilt from the body itself |
+| C# (low level) | `[MethodImpl(MethodImplOptions.Async)]`, the `AsyncHelpers` calls and the suspension branches |
+| Native ASM | the JIT listing of the body, with the resumption path the runtime generates |
+| ilasm round-trip | the attribute survives: `ilasm` 11 accepts `async` in the method header, and the assembled method keeps it |
+
+`test/fixtures/RuntimeAsync` is compiled with the feature on; its checks cover the IL and both kinds of
+C#, the JIT listing, the round-trip and the map to source lines.
+
 ## 🧊 ASM straight from a ReadyToRun image
 
 If an assembly is published as ReadyToRun, its code lies in the file itself. The ASM panel reads it
@@ -747,12 +778,12 @@ arm64 code, which otherwise cannot be seen on an x64 machine.
 | Step | Detail |
 |---|---|
 | Where the blob of a method lies | `DebugInfo` is a sparse array keyed by the block number in `RuntimeFunctions`; the value of an entry is either the offset of the blob or, when the entry is written as a full word, the distance back to the blob lying before it |
-| Blob header | nibble numbers: the length of the part with the map and the length of the part with variables; a "fat" header (`0`) adds four more lengths, of which only the first is needed |
-| Map, format ≥ 16 | the header of the part contains the number of entries and the widths of two of the three numbers of an entry, then the entries follow as bit fields; the kind of an entry is a fixed 2 bits |
+| Blob header | nibble numbers: the length of the part with the map and the length of the part with variables; from format 17 a `0` marks a "fat" header, where the length of the map follows and then five more lengths (variables, uninstrumented bounds, patchpoint info, rich debug info, async info), of which only the first is needed |
+| Map, format ≥ 16 | the header of the part contains the number of entries and the widths of two of the three numbers of an entry, then the entries follow as bit fields; the kind of an entry is a fixed 2 bits, and 3 bits from format 17 (the runtime added a bit that marks the suspension and resumption code of a runtime async method) |
 | Map, format < 16 | the number of entries and then triples: the offset from the previous entry, `IL_offset + 3` and the kind of the entry — nibble numbers without alignment |
 | Reference point | the offsets are native — from the start of the block, so several blocks of one body (a funclet, a cold part) are each read by its own map |
-| Age of the target | verified on images of `net6.0`, `net7.0`, `net8.0`, `net9.0`, `net10.0`: the first three carry the old encoding in the section (formats 8.0/9.0/9.1), the last ones — the bit-field one (16.0), and both are read the same way. Separately verified that for a process on .NET 6 the listing from the image and the listing of the live process coincide instruction by instruction |
-| Verification | the list from the image is compared with what the runtime returns for the same method through attach, instruction by instruction — the `.NET 8` and `.NET 10` fixtures check both encodings |
+| Age of the target | verified on images of `net6.0`, `net7.0`, `net8.0`, `net9.0`, `net10.0` and `net11.0`: images up to .NET 9 carry the old encoding in the section (formats 5.4/8.0/9.1/10.1), .NET 10 — the bit-field one (16.0), and .NET 11 — the same packed form with three bits for the kind of an entry (26.1). All are read the same way. Separately verified that for a process on .NET 6 the listing from the image and the listing of the live process coincide instruction by instruction |
+| Verification | the list from the image is compared with what the runtime returns for the same method through attach, instruction by instruction — the `.NET 8` and `.NET 11` fixtures check both encodings and both widths of the kind |
 
 Along the way a couple of bugs in neighbouring code were found, and they are now covered by checks: the
 block index in `MethodDefEntryPoints` was always read as `value >> 2`, because of which a method without
@@ -810,6 +841,9 @@ What is worth knowing:
 * The low-level view is a view of the decompiler, not of the disassembler: it shows the language
   constructs into which the compiler unfolds the sugar, but not individual IL instructions. Instructions
   are the IL view.
+* In the low-level view a **runtime async** body may carry ILSpy's own note `//IL_xxxx: Expected Obj, but
+  got I4`: the body returns the value directly while its signature promises a `Task<T>`, and the
+  decompiler marks that mismatch instead of hiding it. The high-level view and the IL are not affected.
 * Debug builds are decompiled with artifacts like `if (1 == 0) { }` — this is a property of
   unoptimized IL, not a bug of the viewer.
 * The panels are read-only.
@@ -817,8 +851,8 @@ What is worth knowing:
 ## 📮 Packaging
 
 ```bash
-npm run package     # dist/ilasm-dotnet-1.0.1.vsix
-code --install-extension dist/ilasm-dotnet-1.0.1.vsix --force
+npm run package     # dist/ilasm-dotnet-1.1.0.vsix
+code --install-extension dist/ilasm-dotnet-1.1.0.vsix --force
 ```
 
 The package contains the extension bundle, the published engine, the grammars, the icon and two native
@@ -826,24 +860,24 @@ components: `ilasm` for five platforms and `libcapstone` for disassembling arm64
 nine platforms, but only the five target ones are needed, so the rest are excluded in `.vscodeignore`
 (otherwise the package grows by 20 MB). The sources, the tests and `node_modules` are excluded there as
 well. The engine is published with `UseAppHost=false`, so there is no platform-dependent file in the
-package, but an installed **.NET 10 runtime** is required. The engine is not tied hard to its target
+package, but an installed **.NET 11 runtime** is required. The engine is not tied hard to its target
 framework: `RollForward=LatestMajor` lets it run on a newer runtime as well, if that one is installed
 instead of the tenth.
 
 The engine is also a JIT harness: it launches itself as a child process with the `DOTNET_JitDisasm` and
 `RuntimeHelpers.PrepareMethod` variables, and the assembly under analysis is loaded by exactly the runtime
-that executes the harness. Therefore the target framework of the engine (`net10.0`) is also the runtime
+that executes the harness. Therefore the target framework of the engine (`net11.0`) is also the runtime
 version whose code the "ASM from the JIT" route answers with.
 
-The test fixtures run on .NET 10, except one: `test/fixtures/LiveTarget` stays on **net8.0**. That way two
+The test fixtures run on .NET 11, except one: `test/fixtures/LiveTarget` stays on **net8.0**. That way two
 things that cannot be obtained on the tenth runtime are checked at once: attach to a process of an older
 runtime and the **old encoding of the map** "instruction → IL instruction" in an R2R image — the encoding
-follows the target framework of the assembly, so an image for net8 carries format 9.1, and for net10 —
+follows the target framework of the assembly, so an image for net8 carries format 9.1, and for net11 —
 16.0, and the reader is checked on both.
 
 ## 🔭 What is left
 
-* 🚧 **Other map encodings**: `.NET 8` and `.NET 9+` are read (9.1 and 16.0 are verified by fixtures),
+* 🚧 **Other map encodings**: `.NET 8` and `.NET 9+` are read (9.1, 16.0 and 26.1 are verified by fixtures),
   while older images (and "fat" blobs with additional parts) are not: for them the listing remains
   linked by method.
 * 🚧 **NativeAOT for other platforms**: Linux is done. macOS — the same DWARF in a Mach-O container,
@@ -855,7 +889,7 @@ follows the target framework of the assembly, so an image for net8 carries forma
   because their R2R tables are not supported.
 * 🚧 **Small things**: caching the panels to disk, publishing to the Marketplace, verifying the actually
   installed extension (the in-host tests run on the unpacked package).
-* 🚧 **Multi-targeted projects**: `<TargetFrameworks>net8.0;net10.0</TargetFrameworks>` — the freshest
+* 🚧 **Multi-targeted projects**: `<TargetFrameworks>net8.0;net11.0</TargetFrameworks>` — the freshest
   assembly from `bin/**` is taken, not the one selected in the IDE.
 
 ## 🔐 Privacy

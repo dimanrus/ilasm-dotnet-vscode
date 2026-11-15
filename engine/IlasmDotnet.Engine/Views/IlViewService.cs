@@ -55,7 +55,7 @@ public static partial class IlViewService
                 throw new NotSupportedException($"Unsupported metadata handle: {handle.Kind}");
         }
 
-        var text = writer.ToString();
+        var text = MethodImplFlags.Normalize(writer.ToString());
         var methodOrder = handle.Kind == HandleKind.TypeDefinition
             ? entry.GetMethodTokensInDisassemblyOrder((TypeDefinitionHandle)handle)
             : new List<int> { AssemblyEntry.TokenOf(handle) };

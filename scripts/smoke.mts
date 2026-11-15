@@ -197,6 +197,10 @@ const liveSource = path.join(liveDirectory, 'Target.cs');
 const playgroundDirectory = path.join(root, 'test', 'fixtures', 'Playground');
 const playgroundProject = path.join(playgroundDirectory, 'Playground.csproj');
 const playgroundAssembly = path.join(playgroundDirectory, 'bin', 'Release', 'net11.0', 'Playground.dll');
+const runtimeAsyncDirectory = path.join(root, 'test', 'fixtures', 'RuntimeAsync');
+const runtimeAsyncProject = path.join(runtimeAsyncDirectory, 'RuntimeAsync.csproj');
+const runtimeAsyncSource = path.join(runtimeAsyncDirectory, 'Program.cs');
+const runtimeAsyncAssembly = path.join(runtimeAsyncDirectory, 'bin', 'Release', 'net11.0', 'RuntimeAsync.dll');
 const fsDirectory = path.join(root, 'test', 'fixtures', 'FsTarget');
 const fsProject = path.join(fsDirectory, 'FsTarget.fsproj');
 const fsSource = path.join(fsDirectory, 'Catalog.fs');
@@ -228,6 +232,7 @@ function buildFixture() {
   for (const [name, project] of [
     ['live target', liveProject],
     ['playground', playgroundProject],
+    ['runtime async', runtimeAsyncProject],
     ['fsharp fixture', fsProject],
   ]) {
     console.log(`building the ${name}...`);
@@ -1233,6 +1238,85 @@ async function checkCSharpFlavours(call: EngineCall, members: MemberSummary[]) {
 }
 
 /**
+ * .NET 11 can lower an async method into the runtime instead of a compiler generated state machine:
+ * the method keeps its own body, carries the Async implementation attribute and awaits through
+ * AsyncHelpers. The fixture is compiled with that feature on, and everything the viewer shows about
+ * such a method has to be readable — the listing must spell the attribute the way ilasm accepts it,
+ * or the round-trip silently assembles another method.
+ */
+async function checkRuntimeAsync(call: EngineCall) {
+  if (!fs.existsSync(runtimeAsyncAssembly)) {
+    console.log('  skip the runtime async checks — the fixture could not be built');
+    return;
+  }
+
+  const info = await call('assembly/info', { path: runtimeAsyncAssembly });
+  check('a runtime async assembly is read like any other', info.name === 'RuntimeAsync', info.name);
+  check('a runtime async assembly reports its target framework', /v11\.0|net11\.0/.test(info.targetFramework), info.targetFramework);
+
+  const types = await call('assembly/types', { path: runtimeAsyncAssembly });
+  const program = types.find((type) => type.fullName === 'RuntimeAsync.Program');
+  check('the runtime async fixture declares its program type', Boolean(program), types.map((type) => type.fullName).join(','));
+
+  const members = await call('assembly/members', { path: runtimeAsyncAssembly, token: program!.token });
+  const compute = members.find((member) => member.name === 'ComputeAsync');
+  check('assembly/members lists the runtime async method', Boolean(compute), members.map((member) => member.name).join(','));
+  check('the signature of a runtime async method says async', Boolean(compute?.signature.includes('cil managed async')), compute?.signature);
+  const noInlining = members.find((member) => member.name === 'NoInliningAsync');
+  check(
+    'a named implementation attribute keeps its place next to async',
+    Boolean(noInlining?.signature.includes('cil managed noinlining async')),
+    noInlining?.signature,
+  );
+  check(
+    'no method attribute is left as a hexadecimal number',
+    members.every((member) => !/flags\([0-9a-fA-F]{4}\)/.test(member.signature)),
+    members.map((member) => member.signature).find((signature) => /flags\([0-9a-fA-F]{4}\)/.test(signature)),
+  );
+
+  const il = await call('view/il', { path: runtimeAsyncAssembly, token: compute!.token });
+  check('the IL view marks a runtime async method as async', il.text.includes('cil managed async'), il.text.split('\n').slice(0, 8).join(' | '));
+  check('the IL view shows the runtime await helper', il.text.includes('AsyncHelpers::UnsafeAwaitAwaiter'), '');
+  check('the IL view does not print the async attribute as a number', !il.text.includes('flags(2000)') && !il.text.includes('flags(2008)'), '');
+  check('the IL view of a runtime async method still links to source lines', il.blocks.some((block) => block.sourceFile), `${il.blocks.length} blocks`);
+
+  const high = await call('view/csharp', { path: runtimeAsyncAssembly, token: compute!.token });
+  check(
+    'the high level C# restores async and await',
+    /async Task<int> ComputeAsync/.test(high.text) && high.text.includes('await'),
+    high.text.split('\n').slice(0, 6).join(' | '),
+  );
+
+  const low = await call('view/csharp', { path: runtimeAsyncAssembly, token: compute!.token, lowLevel: true });
+  check(
+    'the low level C# shows the runtime lowering',
+    low.text.includes('MethodImplOptions.Async') && low.text.includes('AsyncHelpers'),
+    low.text.split('\n').slice(0, 6).join(' | '),
+  );
+  check('the low level C# of a runtime async method is decompiled rather than failed', !low.text.includes('decompilation failed'), '');
+
+  const fileView = await call('view/fileCsharp', { path: runtimeAsyncAssembly, file: runtimeAsyncSource });
+  check('the file view shows every runtime async method of the file', (fileView.text.match(/async Task<int>/g) ?? []).length >= 2, fileView.text.slice(0, 200));
+
+  const asm = await call('view/asm', { path: runtimeAsyncAssembly, token: compute!.token, optimized: true });
+  check('the JIT compiles a runtime async method', asm.text.includes('Assembly listing for method'), asm.text.split('\n').slice(0, 6).join(' | '));
+  check('the JIT listing names the runtime it used', /runtime \d+\.\d+/.test(asm.text), (asm.text.match(/runtime [\d.]+/) ?? ['none'])[0]);
+
+  const fileOf = await call('map/fileOf', { path: runtimeAsyncAssembly, token: compute!.token });
+  check('a runtime async method resolves to its source file', /Program\.cs$/.test(fileOf.file ?? ''), String(fileOf.file));
+
+  const outputDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'ilasm-dotnet-roundtrip-'));
+  const roundTrip = await call('assemble/roundTrip', { path: runtimeAsyncAssembly, outputDirectory });
+  check('a runtime async assembly survives the ilasm round-trip', roundTrip.success === true, roundTrip.output?.split('\n').at(-1));
+  check(
+    'every runtime async method survives the round-trip',
+    roundTrip.roundTripMethods === roundTrip.originalMethods,
+    `${roundTrip.roundTripMethods}/${roundTrip.originalMethods}`,
+  );
+  check('the round-trip keeps the async attribute', roundTrip.differences.length === 0, JSON.stringify(roundTrip.differences));
+}
+
+/**
  * The ILASM round-trip is the independent check on the listing: ilasm is a real assembler, so a
  * listing it accepts and turns back into an equivalent assembly is real IL, not just readable text.
  */
@@ -1691,6 +1775,7 @@ async function main() {
     await checkRebuiltAssembly(call);
 
     await checkCSharpFlavours(call, members);
+    await checkRuntimeAsync(call);
 
     const wholeType = await call('view/csharp', { path: fixtureAssembly, token: calculator!.token, includeCompilerGenerated: true });
     check('includeCompilerGenerated exposes compiler generated types', wholeType.text.includes('assembly type: SampleLib.Calculator.<'), String(wholeType.blocks.length));

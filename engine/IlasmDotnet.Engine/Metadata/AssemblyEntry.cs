@@ -562,7 +562,7 @@ public sealed class AssemblyEntry : IDisposable
         try
         {
             write(disassembler);
-            return NormalizeHeader(writer.ToString());
+            return MethodImplFlags.Normalize(NormalizeHeader(writer.ToString()));
         }
         catch (Exception)
         {

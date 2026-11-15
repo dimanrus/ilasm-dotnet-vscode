@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net11.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <DebugType>portable</DebugType>
+    <AssemblyName>RuntimeAsync</AssemblyName>
+    <RootNamespace>RuntimeAsync</RootNamespace>
+    <!-- The point of this fixture: .NET 11 lets the runtime build the suspension machinery of an async
+         method instead of the compiler, so the method carries the Async implementation attribute and
+         awaits through AsyncHelpers. The viewer has to read that shape like any other method. -->
+    <Features>runtime-async=on</Features>
+  </PropertyGroup>
+
+</Project>

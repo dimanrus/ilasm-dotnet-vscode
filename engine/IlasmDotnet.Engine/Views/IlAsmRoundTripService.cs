@@ -81,7 +81,7 @@ public static partial class IlAsmRoundTripService
         disassembler.WriteAssemblyHeader(entry.PE);
         disassembler.WriteModuleHeader(entry.PE);
         disassembler.WriteModuleContents(entry.PE);
-        return FixExceptionHandlers(writer.ToString());
+        return MethodImplFlags.Normalize(FixExceptionHandlers(writer.ToString()));
     }
 
     public static AssembleResultDto Assemble(AssemblyEntry entry, string outputDirectory, string? ilasmPath)

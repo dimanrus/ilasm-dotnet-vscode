@@ -18,7 +18,7 @@ interface RpcResponse {
 }
 
 const ENGINE_DLL = 'IlasmDotnet.Engine.dll';
-const TFM = 'net10.0';
+const TFM = 'net11.0';
 
 /** Talks to the .NET engine over line delimited JSON-RPC on stdio. */
 export class EngineClient implements vscode.Disposable {

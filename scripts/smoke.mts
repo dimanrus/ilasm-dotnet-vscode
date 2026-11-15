@@ -179,8 +179,8 @@ type EngineCall = <M extends keyof EngineResults>(
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const fixtureProject = path.join(root, 'test', 'fixtures', 'SampleLib', 'SampleLib.csproj');
-const fixtureAssembly = path.join(root, 'test', 'fixtures', 'SampleLib', 'bin', 'Debug', 'net10.0', 'SampleLib.dll');
-const releaseAssembly = path.join(root, 'test', 'fixtures', 'SampleLib', 'bin', 'Release', 'net10.0', 'SampleLib.dll');
+const fixtureAssembly = path.join(root, 'test', 'fixtures', 'SampleLib', 'bin', 'Debug', 'net11.0', 'SampleLib.dll');
+const releaseAssembly = path.join(root, 'test', 'fixtures', 'SampleLib', 'bin', 'Release', 'net11.0', 'SampleLib.dll');
 const fixtureSource = path.join(root, 'test', 'fixtures', 'SampleLib', 'Calculator.cs');
 const liveDirectory = path.join(root, 'test', 'fixtures', 'LiveTarget');
 const liveProject = path.join(liveDirectory, 'LiveTarget.csproj');
@@ -192,15 +192,15 @@ const r2rArm64Assembly = path.join(r2rArm64Directory, 'LiveTarget.dll');
 const aotDirectory = path.join(root, 'test', 'fixtures', 'AotTarget');
 const aotProject = path.join(aotDirectory, 'AotTarget.csproj');
 const aotSource = path.join(aotDirectory, 'Target.cs');
-const aotImage = path.join(aotDirectory, 'bin', 'Release', 'net10.0', 'linux-x64', 'publish', 'AotTarget');
+const aotImage = path.join(aotDirectory, 'bin', 'Release', 'net11.0', 'linux-x64', 'publish', 'AotTarget');
 const liveSource = path.join(liveDirectory, 'Target.cs');
 const playgroundDirectory = path.join(root, 'test', 'fixtures', 'Playground');
 const playgroundProject = path.join(playgroundDirectory, 'Playground.csproj');
-const playgroundAssembly = path.join(playgroundDirectory, 'bin', 'Release', 'net10.0', 'Playground.dll');
+const playgroundAssembly = path.join(playgroundDirectory, 'bin', 'Release', 'net11.0', 'Playground.dll');
 const fsDirectory = path.join(root, 'test', 'fixtures', 'FsTarget');
 const fsProject = path.join(fsDirectory, 'FsTarget.fsproj');
 const fsSource = path.join(fsDirectory, 'Catalog.fs');
-const fsAssembly = path.join(fsDirectory, 'bin', 'Release', 'net10.0', 'FsTarget.dll');
+const fsAssembly = path.join(fsDirectory, 'bin', 'Release', 'net11.0', 'FsTarget.dll');
 const fsR2rAssembly = path.join(fsDirectory, 'bin', 'r2r', 'FsTarget.dll');
 const r2rDebugDirectory = path.join(root, 'test', 'fixtures', 'R2RDebug');
 const r2rDebugProject = path.join(r2rDebugDirectory, 'R2RDebug.csproj');
@@ -452,8 +452,8 @@ function labelsOf(text: string) {
 function findEngine(): string {
   const candidates = [
     path.join(root, 'out', 'engine', 'IlasmDotnet.Engine.dll'),
-    path.join(root, 'engine', 'IlasmDotnet.Engine', 'bin', 'Release', 'net10.0', 'IlasmDotnet.Engine.dll'),
-    path.join(root, 'engine', 'IlasmDotnet.Engine', 'bin', 'Debug', 'net10.0', 'IlasmDotnet.Engine.dll'),
+    path.join(root, 'engine', 'IlasmDotnet.Engine', 'bin', 'Release', 'net11.0', 'IlasmDotnet.Engine.dll'),
+    path.join(root, 'engine', 'IlasmDotnet.Engine', 'bin', 'Debug', 'net11.0', 'IlasmDotnet.Engine.dll'),
   ];
 
   const found = candidates.find((candidate) => fs.existsSync(candidate));
@@ -680,7 +680,7 @@ async function checkPackedImageMap(call: EngineCall, published: boolean) {
   }
 
   const info = await call('assembly/info', { path: r2rDebugAssembly });
-  check('the target framework of the fixture is reported', /v10\.0/.test(info.targetFramework), info.targetFramework);
+  check('the target framework of the fixture is reported', /v11\.0/.test(info.targetFramework), info.targetFramework);
 
   // The machine value of an image published for a unix target is one of crossgen2's own numbers,
   // which the enumeration does not name: without the table of the reader the line says "64797".
@@ -1480,7 +1480,7 @@ async function main() {
     const info = await call('assembly/info', { path: fixtureAssembly });
     check('assembly/info reports the assembly name', info.name === 'SampleLib', info.name);
     check('assembly/info finds the portable PDB', info.hasPdb === true);
-    check('assembly/info reports a target framework', /v10\.0|net10\.0/.test(info.targetFramework), info.targetFramework);
+    check('assembly/info reports a target framework', /v11\.0|net11\.0/.test(info.targetFramework), info.targetFramework);
 
     const types = await call('assembly/types', { path: fixtureAssembly });
     const calculator = types.find((type) => type.fullName === 'SampleLib.Calculator');

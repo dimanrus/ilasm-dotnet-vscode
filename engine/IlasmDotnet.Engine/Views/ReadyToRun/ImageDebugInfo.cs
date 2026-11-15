@@ -35,15 +35,27 @@ public readonly record struct ImageMapping(int NativeOffset, int IlOffset, int S
 /// place — follow one another as variable length integers, three bits per nibble. From version 16 they
 /// are packed into one field of a fixed width per entry, with the two widths written in the head of
 /// the part, which is smaller and quicker to walk. Both are read here, because images of both kinds
-/// are still shipped: 8.0 images carry the older one, 9.0 and later the newer.
+/// are still shipped: .NET 9 images are 10.1 and carry the older one, .NET 10 images are 16.0 and
+/// carry the packed one.
+///
+/// Version 17 widened the kind of a place from two bits to three: the runtime added a bit that marks
+/// the suspension and resumption code of a runtime async method. Reading an image of that version
+/// with the old width shifts every field of an entry and turns the map into noise, so the width
+/// follows the version.
 /// </summary>
 public static class ImageDebugInfo
 {
     /// <summary>The version of the image from which the entries are packed rather than run together.</summary>
     private const int PackedFormatVersion = 16;
 
-    /// <summary>How many bits the kind of a place takes in the packed encoding.</summary>
+    /// <summary>The version of the image from which the kind of a place has three bits instead of two.</summary>
+    private const int AsyncSourceVersion = 17;
+
+    /// <summary>How many bits the kind of a place takes in the packed encoding before version 17.</summary>
     private const int SourceBits = 2;
+
+    /// <summary>How many bits it takes from version 17 on: the two older flags and the async one.</summary>
+    private const int SourceBitsWithAsync = 3;
 
     /// <summary>A map longer than this is not believed: it would be a misreading of the head.</summary>
     private const int MaximumMappings = 100_000;
@@ -78,7 +90,7 @@ public static class ImageDebugInfo
 
         var header = new NibbleReader(image, toOffset, blobRva);
         var boundsLength = header.EncodedU32();
-        if (boundsLength == 0)
+        if (boundsLength == 0 && majorVersion >= AsyncSourceVersion)
         {
             // A "fat" head, written when the blob carries more than the offsets and the variables of a
             // method: the lengths of all the parts follow, and only the first one matters here.
@@ -101,7 +113,7 @@ public static class ImageDebugInfo
 
         var boundsRva = blobRva + header.NextByte();
         return majorVersion >= PackedFormatVersion
-            ? ReadPacked(image, toOffset, boundsRva, (int)boundsLength, out note)
+            ? ReadPacked(image, toOffset, boundsRva, (int)boundsLength, majorVersion >= AsyncSourceVersion ? SourceBitsWithAsync : SourceBits, out note)
             : ReadRuns(image, toOffset, boundsRva, out note);
     }
 
@@ -138,13 +150,14 @@ public static class ImageDebugInfo
     /// <summary>
     /// The encoding of version 16 and later: the head names the number of entries and the widths of two
     /// of the three numbers of an entry, and the entries follow as bit fields of that width. The kind
-    /// of the place has a fixed width of two bits.
+    /// of the place has a fixed width, which the version sets.
     /// </summary>
     private static IReadOnlyList<ImageMapping>? ReadPacked(
         byte[] image,
         Func<int, int> toOffset,
         int boundsRva,
         int boundsLength,
+        int sourceBits,
         out string? note)
     {
         note = null;
@@ -153,7 +166,7 @@ public static class ImageDebugInfo
         var nativeBits = (int)reader.EncodedU32() + 1;
         var ilBits = (int)reader.EncodedU32() + 1;
 
-        var width = SourceBits + nativeBits + ilBits;
+        var width = sourceBits + nativeBits + ilBits;
         var array = reader.NextByte();
         if (count is <= 0 or > MaximumMappings || nativeBits > 32 || ilBits > 32 || array + (count * width + 7) / 8 > boundsLength)
         {
@@ -168,9 +181,9 @@ public static class ImageDebugInfo
         for (var index = 0; index < count; index++)
         {
             var entry = bits.Read(width);
-            var source = (int)(entry & (SourceBits - 1));
-            nativeOffset += (int)((entry >> SourceBits) & ((1u << nativeBits) - 1));
-            var ilOffset = (int)((entry >> (SourceBits + nativeBits)) & ((1u << ilBits) - 1)) + ImageMapping.Epilog;
+            var source = (int)(entry & ((1u << sourceBits) - 1));
+            nativeOffset += (int)((entry >> sourceBits) & ((1u << nativeBits) - 1));
+            var ilOffset = (int)((entry >> (sourceBits + nativeBits)) & ((1u << ilBits) - 1)) + ImageMapping.Epilog;
             result.Add(new ImageMapping(nativeOffset, ilOffset, source));
         }
 

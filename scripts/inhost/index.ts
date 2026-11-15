@@ -214,7 +214,7 @@ async function run(): Promise<void> {
 
   const root = resolveFixtureRoot(extension.extensionPath);
   const sourcePath = path.join(root, 'test', 'fixtures', 'SampleLib', 'Calculator.cs');
-  const assemblyPath = path.join(root, 'test', 'fixtures', 'SampleLib', 'bin', 'Debug', 'net10.0', 'SampleLib.dll');
+  const assemblyPath = path.join(root, 'test', 'fixtures', 'SampleLib', 'bin', 'Debug', 'net11.0', 'SampleLib.dll');
   check('the fixture sources are reachable', fs.existsSync(sourcePath), sourcePath);
   check('the fixture assembly is built', fs.existsSync(assemblyPath), assemblyPath);
   check(
@@ -617,7 +617,7 @@ async function checkNativeProject(root: string): Promise<void> {
   const directory = path.join(root, 'test', 'fixtures', 'AotTarget');
   const project = path.join(directory, 'AotTarget.csproj');
   const source = path.join(directory, 'Target.cs');
-  const image = path.join(directory, 'bin', 'Release', 'net10.0', 'linux-x64', 'publish', 'AotTarget');
+  const image = path.join(directory, 'bin', 'Release', 'net11.0', 'linux-x64', 'publish', 'AotTarget');
 
   if (!fs.existsSync(image)) {
     // The publish needs the AOT toolchain, which not every machine has; the checks are then skipped
@@ -679,7 +679,7 @@ async function checkFsharpProject(root: string): Promise<void> {
   const directory = path.join(root, 'test', 'fixtures', 'FsTarget');
   const project = path.join(directory, 'FsTarget.fsproj');
   const source = path.join(directory, 'Catalog.fs');
-  const assembly = path.join(directory, 'bin', 'Release', 'net10.0', 'FsTarget.dll');
+  const assembly = path.join(directory, 'bin', 'Release', 'net11.0', 'FsTarget.dll');
 
   if (!fs.existsSync(assembly)) {
     spawnSync('dotnet', ['build', project, '-c', 'Release', '-v', 'q', '--nologo'], { stdio: 'pipe' });

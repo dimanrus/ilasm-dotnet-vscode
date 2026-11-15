@@ -17,7 +17,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(import.meta.url);
 const fixtureDirectory = path.join(root, 'test', 'fixtures', 'SampleLib');
 const fixtureProject = path.join(fixtureDirectory, 'SampleLib.csproj');
-const fixtureAssembly = path.join(fixtureDirectory, 'bin', 'Debug', 'net10.0', 'SampleLib.dll');
+const fixtureAssembly = path.join(fixtureDirectory, 'bin', 'Debug', 'net11.0', 'SampleLib.dll');
 const fixtureSource = path.join(fixtureDirectory, 'Calculator.cs');
 const liveDirectory = path.join(root, 'test', 'fixtures', 'LiveTarget');
 const liveProject = path.join(liveDirectory, 'LiveTarget.csproj');
@@ -28,11 +28,11 @@ const r2rAssembly = path.join(r2rDirectory, 'LiveTarget.dll');
 const aotDirectory = path.join(root, 'test', 'fixtures', 'AotTarget');
 const aotProject = path.join(aotDirectory, 'AotTarget.csproj');
 const aotSource = path.join(aotDirectory, 'Target.cs');
-const nativeImageFile = path.join(aotDirectory, 'bin', 'Release', 'net10.0', 'linux-x64', 'publish', 'AotTarget');
+const nativeImageFile = path.join(aotDirectory, 'bin', 'Release', 'net11.0', 'linux-x64', 'publish', 'AotTarget');
 const fsDirectory = path.join(root, 'test', 'fixtures', 'FsTarget');
 const fsProject = path.join(fsDirectory, 'FsTarget.fsproj');
 const fsSource = path.join(fsDirectory, 'Catalog.fs');
-const fsAssembly = path.join(fsDirectory, 'bin', 'Release', 'net10.0', 'FsTarget.dll');
+const fsAssembly = path.join(fsDirectory, 'bin', 'Release', 'net11.0', 'FsTarget.dll');
 const singleDirectory = path.join(liveDirectory, 'bin', 'single');
 const singleImageFile = path.join(singleDirectory, 'LiveTarget');
 
@@ -166,8 +166,8 @@ function requireFreshBundle() {
 function requireFreshEngine() {
   const candidates = [
     path.join(root, 'out', 'engine', 'IlasmDotnet.Engine.dll'),
-    path.join(root, 'engine', 'IlasmDotnet.Engine', 'bin', 'Release', 'net10.0', 'IlasmDotnet.Engine.dll'),
-    path.join(root, 'engine', 'IlasmDotnet.Engine', 'bin', 'Debug', 'net10.0', 'IlasmDotnet.Engine.dll'),
+    path.join(root, 'engine', 'IlasmDotnet.Engine', 'bin', 'Release', 'net11.0', 'IlasmDotnet.Engine.dll'),
+    path.join(root, 'engine', 'IlasmDotnet.Engine', 'bin', 'Debug', 'net11.0', 'IlasmDotnet.Engine.dll'),
   ];
   const built = candidates.find((candidate) => fs.existsSync(candidate));
   if (!built) {
